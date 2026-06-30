@@ -44,6 +44,13 @@ export function setBidOrder(captainNames: string[]) {
   })
 }
 
+export function confirmBidPrep(captainNames: string[]) {
+  return apiRequest<ServerAuctionState>('/auction/confirm-bid-prep', {
+    method: 'POST',
+    body: JSON.stringify({ captainNames }),
+  })
+}
+
 export function confirmPool() {
   return apiRequest<ServerAuctionState>('/auction/confirm-pool', { method: 'POST' })
 }

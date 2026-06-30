@@ -12,7 +12,8 @@ defineProps<{
 const phaseLabel: Record<AuctionPhase, string> = {
   idle: '待开始',
   intro: '开场介绍',
-  pool_select: '设定池顺序',
+  pool_select: '设定位置池顺序',
+  bid_order_select: '设定出价顺序',
   pool_announce: '进入位置池',
   pool_draw: '随机抽取',
   bidding: '竞拍中',
@@ -49,9 +50,10 @@ function poolChipLabel(pos: Position) {
       </div>
     </div>
 
-    <div v-if="phase === 'pool_select'" class="pool-select-hint">
-      <span class="hint-label">等待管理员</span>
-      <span>确定五个位置池的拍卖顺序</span>
+    <div v-if="phase === 'pool_select' || phase === 'bid_order_select'" class="pool-select-hint">
+      <span class="hint-label">管理员配置中</span>
+      <span v-if="phase === 'pool_select'">设定位置池顺序与首场出价顺序</span>
+      <span v-else>设定本池队长出价顺序后开始抽签</span>
     </div>
 
     <div v-if="currentPlayer && phase === 'bidding'" class="current-player">

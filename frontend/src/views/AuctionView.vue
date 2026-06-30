@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   beginCeremony,
+  confirmBidPrep,
   confirmPool,
   confirmWinner,
   fetchAuctionState,
@@ -24,6 +25,7 @@ import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import PoolOrderPanel from '../components/PoolOrderPanel.vue'
 import BidOrderPanel from '../components/BidOrderPanel.vue'
 import { buildRosterRowsFromEntries, captainCanBidForPosition, captainSkipReason } from '../rosterUtils'
+import { POSITION_NAMES } from '../constants'
 import { useAuth } from '../stores/auth'
 import type { Position, RosterEntry, RosterRow } from '../types'
 
@@ -81,9 +83,11 @@ const ineligibleReasons = computed((): Record<string, string> => {
   return map
 })
 
-const showBidOrderPanel = computed(() => {
-  if (!isAdmin.value || !state.value) return false
-  return ['pool_announce', 'pool_draw', 'bidding', 'player_done'].includes(state.value.phase)
+const currentPoolLabel = computed(() => {
+  if (!state.value?.currentPool) return ''
+  const idx = state.value.currentPoolIndex + 1
+  const total = state.value.poolOrder.length || 5
+  return `${POSITION_NAMES[state.value.currentPool]} · 第 ${idx}/${total} 池`
 })
 
 const rosterRows = computed((): RosterRow[] => {
@@ -151,6 +155,10 @@ async function onSetPoolOrder(order: Position[]) {
 
 async function onSetBidOrder(names: string[]) {
   await runAction(() => setBidOrder(names), '出价顺序已保存')
+}
+
+async function onConfirmBidPrep(names: string[]) {
+  await runAction(() => confirmBidPrep(names), '开始抽签')
 }
 
 async function onConfirmPool() {
@@ -248,22 +256,34 @@ async function onPass() {
 
       <CeremonyTimeline :phase="state.phase" />
 
-      <!-- 管理员设定池顺序 -->
-      <PoolOrderPanel
-        v-if="state.phase === 'pool_select' && isAdmin"
-        @confirm="onSetPoolOrder"
-      />
+      <!-- 仪式配置：位置池 + 队长顺序 -->
+      <div v-if="state.phase === 'pool_select' && isAdmin" class="setup-section">
+        <PoolOrderPanel @confirm="onSetPoolOrder" />
+        <BidOrderPanel
+          :captains="state.captains"
+          :saved-order="state.bidOrder"
+          pool-label="首场预备"
+          confirm-label="暂存出价顺序"
+          @confirm="onSetBidOrder"
+        />
+      </div>
 
       <div v-else-if="state.phase === 'pool_select'" class="banner info">
-        等待管理员确定位置池拍卖顺序…
+        等待管理员设定位置池与出价顺序…
       </div>
 
       <BidOrderPanel
-        v-if="showBidOrderPanel"
+        v-else-if="state.phase === 'bid_order_select' && isAdmin"
         :captains="state.captains"
         :saved-order="state.bidOrder"
-        @confirm="onSetBidOrder"
+        :pool-label="currentPoolLabel"
+        confirm-label="确认顺序并开始抽签"
+        @confirm="onConfirmBidPrep"
       />
+
+      <div v-else-if="state.phase === 'bid_order_select'" class="banner info">
+        等待管理员设定【{{ state.currentPool ? POSITION_NAMES[state.currentPool] : '' }}】池出价顺序…
+      </div>
 
       <div class="main-grid">
         <div class="left-col">
@@ -398,6 +418,19 @@ async function onPass() {
 
 .pool-select {
   margin-bottom: 1rem;
+}
+
+.setup-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 960px) {
+  .setup-section {
+    grid-template-columns: 1fr;
+  }
 }
 
 .main-grid {

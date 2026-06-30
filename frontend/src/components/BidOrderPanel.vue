@@ -5,6 +5,8 @@ import type { Captain } from '../types'
 const props = defineProps<{
   captains: Captain[]
   savedOrder: string[]
+  poolLabel?: string
+  confirmLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -88,9 +90,18 @@ function onConfirm() {
 
 <template>
   <div class="bid-order-panel card">
-    <h3 class="panel-title">队长出价顺序</h3>
+    <h3 class="panel-title">
+      队长出价顺序
+      <span v-if="poolLabel" class="pool-tag">{{ poolLabel }}</span>
+    </h3>
     <p class="panel-desc">
-      拖拽调整先后，或使用 ↑↓ 微调；保存后从<strong>下一轮</strong>起生效。未设定时首轮按实力、后续按资金。
+      拖拽调整先后，或使用 ↑↓ 微调。
+      <template v-if="confirmLabel?.includes('抽签')">
+        确认后将开始<strong>随机抽签</strong>并进入拍卖。
+      </template>
+      <template v-else>
+        可先设定顺序；确认位置池后将进入各池出价顺序确认。
+      </template>
     </p>
 
     <ol class="order-list">
@@ -129,7 +140,9 @@ function onConfirm() {
 
     <div class="panel-actions">
       <button type="button" class="btn-ghost" @click="resetDefault">恢复默认（实力排序）</button>
-      <button type="button" class="btn-primary" @click="onConfirm">保存出价顺序</button>
+      <button type="button" class="btn-primary" @click="onConfirm">
+        {{ confirmLabel || '保存出价顺序' }}
+      </button>
     </div>
   </div>
 </template>
@@ -144,6 +157,19 @@ function onConfirm() {
   font-size: 0.9375rem;
   font-weight: 700;
   margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pool-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gold);
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--gold-dim);
 }
 
 .panel-desc {

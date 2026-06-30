@@ -285,6 +285,17 @@ def auction_set_bid_order(
     return auction.to_state()
 
 
+@app.post("/api/auction/confirm-bid-prep")
+def auction_confirm_bid_prep(
+    payload: BidOrderPayload,
+    _user: dict = Depends(require_admin),
+):
+    err = auction.confirm_bid_prep(payload.captainNames)
+    if err:
+        raise HTTPException(400, err)
+    return auction.to_state()
+
+
 @app.post("/api/auction/confirm-pool")
 def auction_confirm_pool(_user: dict = Depends(require_admin)):
     auction.confirm_pool_enter()

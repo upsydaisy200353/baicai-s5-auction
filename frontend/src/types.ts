@@ -46,6 +46,7 @@ export type AuctionPhase =
   | 'idle'
   | 'intro'
   | 'pool_select'
+  | 'bid_order_select'
   | 'pool_announce'
   | 'pool_draw'
   | 'bidding'

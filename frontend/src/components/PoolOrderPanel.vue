@@ -66,7 +66,7 @@ function onConfirm() {
 
     <div class="panel-actions">
       <button type="button" class="btn-ghost" @click="shuffle">随机打乱</button>
-      <button type="button" class="btn-primary" @click="onConfirm">确认顺序并开始</button>
+      <button type="button" class="btn-primary" @click="onConfirm">确认位置池顺序</button>
     </div>
   </div>
 </template>

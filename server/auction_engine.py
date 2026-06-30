@@ -237,29 +237,69 @@ class AuctionEngine:
         self.pool_order = list(order)
         self.remaining_pools = []
         labels = " → ".join(POSITION_NAMES[p] for p in order)
-        self.add_log(f"拍卖顺序：{labels}", "phase")
+        self.add_log(f"位置池顺序：{labels}", "phase")
         self.current_pool_index = 0
-        self._announce_pool()
+        self._enter_bid_order_select()
         return None
 
     def set_bid_order(self, names: list[str]) -> str | None:
+        if self.phase not in ("pool_select", "bid_order_select"):
+            return "当前不能设定出价顺序"
+        return self._apply_bid_order(names)
+
+    def _apply_bid_order(self, names: list[str]) -> str | None:
         cap_names = {c["name"] for c in self.captains}
         if set(names) != cap_names:
             return "须包含全部队长且不能遗漏"
         if len(names) != len(set(names)):
             return "队长不能重复"
         self.bid_order_names = list(names)
-        self.add_log(f"队长出价顺序：{' → '.join(names)}", "phase")
         return None
 
+    def confirm_bid_prep(self, names: list[str]) -> str | None:
+        if self.phase != "bid_order_select":
+            return "请先完成位置池顺序设定，并在出价顺序阶段确认"
+        err = self._apply_bid_order(names)
+        if err:
+            return err
+        pool = self.current_pool
+        self.add_log(f"队长出价顺序：{' → '.join(names)}", "phase")
+        if pool:
+            self.add_log(f"【{POSITION_NAMES[pool]}】池开始抽签", "phase")
+        self._start_draw()
+        return None
+
+    def _enter_bid_order_select(self) -> None:
+        while self.current_pool_index < len(self.pool_order):
+            pool = self.pool_order[self.current_pool_index]
+            self.current_pool = pool
+            has_players = bool(self.available_players(pool))
+            has_bidders = bool(self.eligible_captains(pool))
+            if has_players and has_bidders:
+                if self.current_pool_index > 0:
+                    self.bid_order_names = []
+                self.phase = "bid_order_select"
+                self.add_log(
+                    f"请设定【{POSITION_NAMES[pool]}】池队长出价顺序"
+                    f"（第 {self.current_pool_index + 1}/{len(self.pool_order)} 个位置池）",
+                    "phase",
+                )
+                return
+            if not has_players:
+                self.add_log(f"【{POSITION_NAMES[pool]}】池已无选手，跳过", "warn")
+            else:
+                self.add_log(
+                    f"【{POSITION_NAMES[pool]}】池无人可竞拍（各队已有该位置选手），跳过",
+                    "warn",
+                )
+            self.current_pool_index += 1
+        self.current_pool = None
+        self.phase = "finished"
+        self.add_log("选人仪式圆满结束", "phase")
+
     def _announce_pool(self) -> None:
-        if self.current_pool_index >= len(self.pool_order):
-            self.phase = "finished"
-            self.add_log("选人仪式圆满结束", "phase")
-            return
-        self.current_pool = self.pool_order[self.current_pool_index]
-        self.phase = "pool_announce"
-        self.add_log(f"进入【{POSITION_NAMES[self.current_pool]}】位置池", "phase")
+        """兼容旧调用：进入出价顺序设定"""
+        self._enter_bid_order_select()
 
     def confirm_pool_enter(self) -> None:
         if self.phase == "pool_announce":
@@ -271,7 +311,7 @@ class AuctionEngine:
         pool = self.available_players(self.current_pool)
         if not pool:
             self.current_pool_index += 1
-            self._announce_pool()
+            self._enter_bid_order_select()
             return
         if not self.eligible_captains(self.current_pool):
             self.add_log(
@@ -279,7 +319,7 @@ class AuctionEngine:
                 "warn",
             )
             self.current_pool_index += 1
-            self._announce_pool()
+            self._enter_bid_order_select()
             return
         self.pending_pick = random.choice(pool)
         self.draw_candidates = copy.deepcopy(pool)
