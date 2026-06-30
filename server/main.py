@@ -80,6 +80,10 @@ class PoolOrderPayload(BaseModel):
     order: list[Literal["Top", "Jungle", "Mid", "Bot", "Support"]] = Field(min_length=5, max_length=5)
 
 
+class BidOrderPayload(BaseModel):
+    captainNames: list[str] = Field(min_length=1)
+
+
 class BidPayload(BaseModel):
     action: Literal["bid", "pass", "buyout"]
     increment: int | None = Field(default=None, ge=10, le=100)
@@ -264,6 +268,17 @@ def auction_set_pool_order(
     _user: dict = Depends(require_admin),
 ):
     err = auction.set_pool_order(payload.order)
+    if err:
+        raise HTTPException(400, err)
+    return auction.to_state()
+
+
+@app.post("/api/auction/set-bid-order")
+def auction_set_bid_order(
+    payload: BidOrderPayload,
+    _user: dict = Depends(require_admin),
+):
+    err = auction.set_bid_order(payload.captainNames)
     if err:
         raise HTTPException(400, err)
     return auction.to_state()

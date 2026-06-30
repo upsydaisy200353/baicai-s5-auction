@@ -45,6 +45,7 @@ class AuctionEngine:
         self.bidding: dict | None = None
         self.remaining_pools: list[str] = []
         self.pending_pick: dict | None = None
+        self.bid_order_names: list[str] = []
 
     def load_roster(self, players: list[dict], captains: list[dict]) -> None:
         self.players = copy.deepcopy(players)
@@ -61,6 +62,33 @@ class AuctionEngine:
 
     def active_captains(self) -> list[dict]:
         return [c for c in self.captains if c["funds"] > 0]
+
+    def _captain_positions(self, cap: dict) -> set[str]:
+        positions: set[str] = set()
+        for name in cap.get("team", []):
+            player = next((p for p in self.players if p["name"] == name), None)
+            if player:
+                positions.add(player["position"])
+        return positions
+
+    def captain_can_bid(self, cap: dict, position: str) -> bool:
+        if cap["funds"] <= 0:
+            return False
+        return position not in self._captain_positions(cap)
+
+    def eligible_captains(self, position: str) -> list[dict]:
+        return [c for c in self.captains if self.captain_can_bid(c, position)]
+
+    def _default_bid_order_names(self) -> list[str]:
+        return [c["name"] for c in sorted(self.captains, key=lambda c: c["rating"], reverse=True)]
+
+    def _sort_bid_order(self, eligible: list[dict], round_num: int) -> list[dict]:
+        if self.bid_order_names:
+            rank = {name: i for i, name in enumerate(self.bid_order_names)}
+            return sorted(eligible, key=lambda c: rank.get(c["name"], 999))
+        if round_num == 1:
+            return sorted(eligible, key=lambda c: c["rating"], reverse=True)
+        return sorted(eligible, key=lambda c: c["funds"])
 
     def available_players(self, position: str) -> list[dict]:
         return [
@@ -91,6 +119,7 @@ class AuctionEngine:
             "drawCandidates": copy.deepcopy(self.draw_candidates),
             "lastResult": copy.deepcopy(self.last_result),
             "availablePools": self.available_pools,
+            "bidOrder": list(self.bid_order_names),
         }
 
     def start(self) -> None:
@@ -100,9 +129,11 @@ class AuctionEngine:
         self.players = players
         self.captains = captains
         self.captain_names = captain_names
+        self.bid_order_names = []
         self.phase = "intro"
         self.add_log("白菜杯选人仪式开始", "phase")
         self.add_log("8 位队长将通过拍卖竞价组建战队", "info")
+        self.add_log("规则：每队每个位置仅可签下一名选手", "info")
 
     def begin_pool_select(self) -> None:
         if self.phase != "intro":
@@ -127,6 +158,16 @@ class AuctionEngine:
         self._announce_pool()
         return None
 
+    def set_bid_order(self, names: list[str]) -> str | None:
+        cap_names = {c["name"] for c in self.captains}
+        if set(names) != cap_names:
+            return "须包含全部队长且不能遗漏"
+        if len(names) != len(set(names)):
+            return "队长不能重复"
+        self.bid_order_names = list(names)
+        self.add_log(f"队长出价顺序：{' → '.join(names)}", "phase")
+        return None
+
     def _announce_pool(self) -> None:
         if self.current_pool_index >= len(self.pool_order):
             self.phase = "finished"
@@ -148,8 +189,13 @@ class AuctionEngine:
             self.current_pool_index += 1
             self._announce_pool()
             return
-        if not self.active_captains():
-            self.phase = "finished"
+        if not self.eligible_captains(self.current_pool):
+            self.add_log(
+                f"【{POSITION_NAMES[self.current_pool]}】池无人可竞拍（各队已有该位置选手）",
+                "warn",
+            )
+            self.current_pool_index += 1
+            self._announce_pool()
             return
         self.pending_pick = random.choice(pool)
         self.draw_candidates = copy.deepcopy(pool)
@@ -171,6 +217,14 @@ class AuctionEngine:
     def _begin_bidding(self) -> None:
         if not self.current_player:
             return
+        position = self.current_player["position"]
+        if not self.eligible_captains(position):
+            self.add_log(
+                f"所有队长已拥有【{POSITION_NAMES[position]}】选手，{self.current_player['name']} 流拍",
+                "warn",
+            )
+            self._show_winner_reveal(self.current_player, None, None)
+            return
         self.phase = "bidding"
         self.round_num = 0
         self.current_price = self.current_player["startPrice"]
@@ -185,12 +239,19 @@ class AuctionEngine:
         self.round_num += 1
         self.raised_this_round = False
         self.turn_index = 0
-        active = self.active_captains()
-        self.order = (
-            sorted(active, key=lambda c: c["rating"], reverse=True)
-            if self.round_num == 1
-            else sorted(active, key=lambda c: c["funds"])
-        )
+        position = self.current_player["position"]
+        eligible = self.eligible_captains(position)
+        self.order = self._sort_bid_order(eligible, self.round_num)
+        if not self.order:
+            self._finish_player_auction()
+            return
+        order_text = " → ".join(c["name"] for c in self.order)
+        if self.bid_order_names:
+            self.add_log(f"第 {self.round_num} 轮（管理员设定顺序）：{order_text}", "info")
+        elif self.round_num == 1:
+            self.add_log(f"第 1 轮（实力强→弱）：{order_text}", "info")
+        else:
+            self.add_log(f"第 {self.round_num} 轮（资金少→多）：{order_text}", "info")
         self._advance_turn()
 
     def _advance_turn(self) -> None:
@@ -234,6 +295,10 @@ class AuctionEngine:
             self.bidding = None
             self._advance_turn()
             return None
+
+        position = self.current_player["position"]
+        if not self.captain_can_bid(cap, position):
+            return f"你已有【{POSITION_NAMES[position]}】位置选手，不能参与本场竞拍"
 
         if action == "buyout":
             if self.round_num != 1:

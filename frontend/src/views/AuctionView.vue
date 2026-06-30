@@ -7,6 +7,7 @@ import {
   fetchAuctionState,
   revealDraw,
   resetAuction as apiResetAuction,
+  setBidOrder,
   setPoolOrder,
   startAuction,
   submitBid,
@@ -21,9 +22,10 @@ import AuctionStage from '../components/AuctionStage.vue'
 import CeremonyTimeline from '../components/CeremonyTimeline.vue'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import PoolOrderPanel from '../components/PoolOrderPanel.vue'
+import BidOrderPanel from '../components/BidOrderPanel.vue'
 import { buildRosterRowsFromEntries } from '../rosterUtils'
 import { useAuth } from '../stores/auth'
-import type { Position, RosterEntry, RosterRow } from '../types'
+import type { Captain, Player, Position, RosterEntry, RosterRow } from '../types'
 
 const { isAdmin, isCaptain, captainName, user } = useAuth()
 
@@ -52,6 +54,30 @@ const isProxyBid = computed(() => isAdmin.value && !!state.value?.bidding)
 const proxyCaptainName = computed(
   () => state.value?.bidding?.turnCaptain.name,
 )
+
+const bidContextPosition = computed((): Position | null => {
+  if (state.value?.bidding?.player.position) return state.value.bidding.player.position
+  if (state.value?.currentPlayer?.position) return state.value.currentPlayer.position
+  if (state.value?.currentPool) return state.value.currentPool
+  return null
+})
+
+function captainHasPosition(cap: Captain, position: Position, players: Player[]) {
+  return cap.team.some((name) => players.find((p) => p.name === name)?.position === position)
+}
+
+const ineligibleCaptainNames = computed((): string[] => {
+  if (!state.value || !bidContextPosition.value) return []
+  const pos = bidContextPosition.value
+  return state.value.captains
+    .filter((c) => captainHasPosition(c, pos, state.value!.players))
+    .map((c) => c.name)
+})
+
+const showBidOrderPanel = computed(() => {
+  if (!isAdmin.value || !state.value) return false
+  return ['pool_announce', 'pool_draw', 'bidding', 'player_done'].includes(state.value.phase)
+})
 
 const rosterRows = computed((): RosterRow[] => {
   if (!state.value) return buildRosterRowsFromEntries(entries.value)
@@ -114,6 +140,10 @@ async function onBegin() {
 
 async function onSetPoolOrder(order: Position[]) {
   await runAction(() => setPoolOrder(order))
+}
+
+async function onSetBidOrder(names: string[]) {
+  await runAction(() => setBidOrder(names), '出价顺序已保存')
 }
 
 async function onConfirmPool() {
@@ -209,6 +239,13 @@ async function onPass() {
         等待管理员确定位置池拍卖顺序…
       </div>
 
+      <BidOrderPanel
+        v-if="showBidOrderPanel"
+        :captains="state.captains"
+        :saved-order="state.bidOrder"
+        @confirm="onSetBidOrder"
+      />
+
       <div class="main-grid">
         <div class="left-col">
           <AuctionStage
@@ -235,7 +272,13 @@ async function onPass() {
 
           <section class="section">
             <h3 class="section-title">队长</h3>
-            <CaptainCards :captains="state.captains" :active-name="activeCaptainName" />
+            <CaptainCards
+              :captains="state.captains"
+              :active-name="activeCaptainName"
+              :current-position="bidContextPosition"
+              :players="state.players"
+              :ineligible-names="ineligibleCaptainNames"
+            />
           </section>
         </div>
 

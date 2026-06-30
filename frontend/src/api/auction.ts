@@ -15,6 +15,7 @@ export interface ServerAuctionState {
   drawCandidates: Player[]
   lastResult: LastResult | null
   availablePools: Position[]
+  bidOrder: string[]
 }
 
 export function fetchAuctionState() {
@@ -33,6 +34,13 @@ export function setPoolOrder(order: Position[]) {
   return apiRequest<ServerAuctionState>('/auction/set-pool-order', {
     method: 'POST',
     body: JSON.stringify({ order }),
+  })
+}
+
+export function setBidOrder(captainNames: string[]) {
+  return apiRequest<ServerAuctionState>('/auction/set-bid-order', {
+    method: 'POST',
+    body: JSON.stringify({ captainNames }),
   })
 }
 
