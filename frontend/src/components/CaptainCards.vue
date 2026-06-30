@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { POSITION_NAMES } from '../constants'
+import { POOL_LETTERS, POSITION_NAMES } from '../constants'
+import { captainOccupiedPositions } from '../rosterUtils'
 import type { Captain, Player, Position } from '../types'
 
 const props = defineProps<{
@@ -9,21 +10,23 @@ const props = defineProps<{
   currentPosition?: Position | null
   players?: Player[]
   ineligibleNames?: string[]
+  ineligibleReasons?: Record<string, string>
 }>()
 
 const sorted = computed(() =>
   [...props.captains].sort((a, b) => b.rating - a.rating),
 )
 
-function teamPositions(cap: Captain): Position[] {
-  if (!props.players?.length) return []
-  return cap.team
-    .map((name) => props.players!.find((p) => p.name === name)?.position)
-    .filter((p): p is Position => !!p)
-}
-
 function isIneligible(cap: Captain) {
   return props.ineligibleNames?.includes(cap.name) ?? false
+}
+
+function skipReason(cap: Captain) {
+  return props.ineligibleReasons?.[cap.name]
+}
+
+function ownPosition(cap: Captain): Position {
+  return POOL_LETTERS[cap.poolLetter]
 }
 </script>
 
@@ -43,28 +46,34 @@ function isIneligible(cap: Captain) {
         <span class="cap-name">{{ cap.name }}</span>
         <span class="badge badge-blue">实力 {{ cap.rating }}</span>
       </div>
+      <p class="own-pos">本人位置：{{ POSITION_NAMES[ownPosition(cap)] }}</p>
       <div class="cap-funds">
         <span class="label">剩余资金</span>
         <span class="amount">{{ cap.funds }}<small>w</small></span>
       </div>
       <p v-if="isIneligible(cap) && currentPosition" class="skip-hint">
-        已有{{ POSITION_NAMES[currentPosition] }}，本场不参与
+        {{ skipReason(cap) || '本场不参与' }}
       </p>
       <div v-if="cap.team.length" class="cap-team">
         <span class="label">队员</span>
         <div class="team-tags">
           <span
-            v-for="(name, i) in cap.team"
+            v-for="name in cap.team"
             :key="name"
             class="team-tag"
-            :class="{ filled: teamPositions(cap)[i] === currentPosition }"
           >
             {{ name }}
-            <small v-if="teamPositions(cap)[i]">
-              ({{ POSITION_NAMES[teamPositions(cap)[i]!] }})
+            <small v-if="players?.find((p) => p.name === name)">
+              ({{ POSITION_NAMES[players!.find((p) => p.name === name)!.position] }})
             </small>
           </span>
         </div>
+      </div>
+      <div
+        v-else-if="players?.length && captainOccupiedPositions(cap, players).length === 1"
+        class="cap-team"
+      >
+        <span class="label muted-only">暂无竞拍队员</span>
       </div>
     </div>
   </div>
@@ -100,12 +109,18 @@ function isIneligible(cap: Captain) {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .cap-name {
   font-weight: 700;
   font-size: 1rem;
+}
+
+.own-pos {
+  font-size: 0.7rem;
+  color: var(--accent);
+  margin-bottom: 0.45rem;
 }
 
 .cap-funds {
@@ -124,6 +139,10 @@ function isIneligible(cap: Captain) {
 .label {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.muted-only {
+  opacity: 0.7;
 }
 
 .amount {
@@ -150,11 +169,6 @@ function isIneligible(cap: Captain) {
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   color: var(--text-muted);
-}
-
-.team-tag.filled {
-  background: var(--gold-dim);
-  color: var(--gold);
 }
 
 .team-tag small {

@@ -7,7 +7,7 @@ import random
 from datetime import datetime
 from typing import Any
 
-from constants import POSITION_NAMES, POSITIONS
+from constants import POOL_LETTERS, POSITION_NAMES, POSITIONS
 
 MIN_INCREMENT = 10
 MAX_INCREMENT = 100
@@ -63,8 +63,17 @@ class AuctionEngine:
     def active_captains(self) -> list[dict]:
         return [c for c in self.captains if c["funds"] > 0]
 
+    def _captain_own_position(self, cap: dict) -> str | None:
+        letter = cap.get("poolLetter")
+        if letter and letter in POOL_LETTERS:
+            return POOL_LETTERS[letter]
+        return cap.get("position")
+
     def _captain_positions(self, cap: dict) -> set[str]:
         positions: set[str] = set()
+        own = self._captain_own_position(cap)
+        if own:
+            positions.add(own)
         for name in cap.get("team", []):
             player = next((p for p in self.players if p["name"] == name), None)
             if player:
@@ -74,7 +83,19 @@ class AuctionEngine:
     def captain_can_bid(self, cap: dict, position: str) -> bool:
         if cap["funds"] <= 0:
             return False
-        return position not in self._captain_positions(cap)
+        if position in self._captain_positions(cap):
+            return False
+        return True
+
+    def captain_skip_reason(self, cap: dict, position: str) -> str | None:
+        if cap["funds"] <= 0:
+            return "资金不足"
+        own = self._captain_own_position(cap)
+        if own == position:
+            return f"本人为{POSITION_NAMES[position]}"
+        if position in self._captain_positions(cap):
+            return f"已有{POSITION_NAMES[position]}选手"
+        return None
 
     def eligible_captains(self, position: str) -> list[dict]:
         return [c for c in self.captains if self.captain_can_bid(c, position)]
@@ -133,7 +154,7 @@ class AuctionEngine:
         self.phase = "intro"
         self.add_log("白菜杯选人仪式开始", "phase")
         self.add_log("8 位队长将通过拍卖竞价组建战队", "info")
-        self.add_log("规则：每队每个位置仅可签下一名选手", "info")
+        self.add_log("规则：每队每个位置仅可签下一名选手（含队长本人位置）", "info")
 
     def begin_pool_select(self) -> None:
         if self.phase != "intro":
@@ -298,7 +319,8 @@ class AuctionEngine:
 
         position = self.current_player["position"]
         if not self.captain_can_bid(cap, position):
-            return f"你已有【{POSITION_NAMES[position]}】位置选手，不能参与本场竞拍"
+            reason = self.captain_skip_reason(cap, position)
+            return f"不能参与本场竞拍（{reason}）"
 
         if action == "buyout":
             if self.round_num != 1:

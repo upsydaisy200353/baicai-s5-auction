@@ -23,9 +23,9 @@ import CeremonyTimeline from '../components/CeremonyTimeline.vue'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import PoolOrderPanel from '../components/PoolOrderPanel.vue'
 import BidOrderPanel from '../components/BidOrderPanel.vue'
-import { buildRosterRowsFromEntries } from '../rosterUtils'
+import { buildRosterRowsFromEntries, captainCanBidForPosition, captainSkipReason } from '../rosterUtils'
 import { useAuth } from '../stores/auth'
-import type { Captain, Player, Position, RosterEntry, RosterRow } from '../types'
+import type { Position, RosterEntry, RosterRow } from '../types'
 
 const { isAdmin, isCaptain, captainName, user } = useAuth()
 
@@ -62,16 +62,23 @@ const bidContextPosition = computed((): Position | null => {
   return null
 })
 
-function captainHasPosition(cap: Captain, position: Position, players: Player[]) {
-  return cap.team.some((name) => players.find((p) => p.name === name)?.position === position)
-}
-
 const ineligibleCaptainNames = computed((): string[] => {
   if (!state.value || !bidContextPosition.value) return []
   const pos = bidContextPosition.value
   return state.value.captains
-    .filter((c) => captainHasPosition(c, pos, state.value!.players))
+    .filter((c) => !captainCanBidForPosition(c, pos, state.value!.players))
     .map((c) => c.name)
+})
+
+const ineligibleReasons = computed((): Record<string, string> => {
+  const map: Record<string, string> = {}
+  if (!state.value || !bidContextPosition.value) return map
+  const pos = bidContextPosition.value
+  for (const c of state.value.captains) {
+    const reason = captainSkipReason(c, pos, state.value.players)
+    if (reason) map[c.name] = reason
+  }
+  return map
 })
 
 const showBidOrderPanel = computed(() => {
@@ -278,6 +285,7 @@ async function onPass() {
               :current-position="bidContextPosition"
               :players="state.players"
               :ineligible-names="ineligibleCaptainNames"
+              :ineligible-reasons="ineligibleReasons"
             />
           </section>
         </div>
