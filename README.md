@@ -44,9 +44,12 @@ npm run dev             # http://localhost:5173
 
 1. 将仓库推送到 GitHub
 2. 在 [Render Dashboard](https://dashboard.render.com/) → **New** → **Blueprint** → 连接仓库
-3. 部署完成后访问 `https://<service>.onrender.com`
+3. 部署完成后访问 https://baicai-s5-auction.onrender.com
 
 环境变量 `AUCTION_JWT_SECRET` 由 Blueprint 自动生成。
+
+在线地址：**https://baicai-s5-auction.onrender.com**  
+GitHub：**https://github.com/upsydaisy200353/baicai-s5-auction**
 
 ## 名单管理 API
 

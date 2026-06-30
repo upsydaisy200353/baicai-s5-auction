@@ -330,7 +330,7 @@ def _mount_frontend() -> None:
 
     @app.get("/")
     async def serve_index():
-        return FileResponse(FONTEND_DIST / "index.html")
+        return FileResponse(FRONTEND_DIST / "index.html")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -339,7 +339,7 @@ def _mount_frontend() -> None:
         target = FRONTEND_DIST / full_path
         if target.is_file():
             return FileResponse(target)
-        return FileResponse(FONTEND_DIST / "index.html")
+        return FileResponse(FRONTEND_DIST / "index.html")
 
 
 _mount_frontend()
