@@ -10,6 +10,7 @@ const props = defineProps<{
   poolOrder: Position[]
   drawCandidates: Player[]
   lastResult: LastResult | null
+  isAdmin?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,7 +35,9 @@ function startSpin() {
     tick++
     if (tick > 28) {
       stopSpin()
-      emit('revealDraw')
+      if (props.isAdmin) {
+        emit('revealDraw')
+      }
     }
   }, 80)
 }
@@ -45,14 +48,24 @@ function stopSpin() {
   spinning.value = false
 }
 
+function maybeStartSpin() {
+  if (props.phase !== 'pool_draw' || !props.drawCandidates.length) return
+  if (spinning.value || spinTimer) return
+  spinName.value = '???'
+  setTimeout(startSpin, 400)
+}
+
 watch(
-  () => props.phase,
-  (phase) => {
-    if (phase === 'pool_draw' && props.drawCandidates.length) {
+  () => [props.phase, props.drawCandidates.length] as const,
+  ([phase]) => {
+    if (phase === 'pool_draw') {
+      maybeStartSpin()
+    } else {
+      stopSpin()
       spinName.value = '???'
-      setTimeout(startSpin, 400)
     }
   },
+  { immediate: true },
 )
 
 onUnmounted(stopSpin)

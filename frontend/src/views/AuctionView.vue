@@ -223,6 +223,7 @@ async function onPass() {
         :pool-order="state.poolOrder"
         :draw-candidates="state.drawCandidates"
         :last-result="state.lastResult"
+        :is-admin="isAdmin"
         @begin="onBegin"
         @confirm-pool="onConfirmPool"
         @reveal-draw="onRevealDraw"
