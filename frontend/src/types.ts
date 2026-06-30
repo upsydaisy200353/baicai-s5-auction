@@ -74,9 +74,12 @@ export interface BiddingContext {
   highestBidder: string | null
   roundNum: number
   lastIncrement: number
+  minNextBid: number
+  minRaise: number
   isFirstRound: boolean
   turnCaptain: Captain
   order: Captain[]
+  passedCaptains: string[]
 }
 
 export interface LastResult {

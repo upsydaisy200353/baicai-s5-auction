@@ -169,21 +169,33 @@ async function onReset() {
   await runAction(apiResetAuction, '已重置')
 }
 
-async function onBid(increment: number) {
+async function onBid(amount: number) {
   await runAction(() =>
-    submitBid('bid', increment, isAdmin.value ? proxyCaptainName.value : undefined),
+    submitBid('bid', {
+      amount,
+      captainName: isAdmin.value ? proxyCaptainName.value : undefined,
+    }),
+  )
+}
+
+async function onBidIncrement(increment: number) {
+  await runAction(() =>
+    submitBid('bid', {
+      increment,
+      captainName: isAdmin.value ? proxyCaptainName.value : undefined,
+    }),
   )
 }
 
 async function onBuyout() {
   await runAction(() =>
-    submitBid('buyout', undefined, isAdmin.value ? proxyCaptainName.value : undefined),
+    submitBid('buyout', { captainName: isAdmin.value ? proxyCaptainName.value : undefined }),
   )
 }
 
 async function onPass() {
   await runAction(() =>
-    submitBid('pass', undefined, isAdmin.value ? proxyCaptainName.value : undefined),
+    submitBid('pass', { captainName: isAdmin.value ? proxyCaptainName.value : undefined }),
   )
 }
 </script>
@@ -273,6 +285,7 @@ async function onPass() {
                 : undefined
             "
             @bid="onBid"
+            @bid-increment="onBidIncrement"
             @buyout="onBuyout"
             @pass="onPass"
           />

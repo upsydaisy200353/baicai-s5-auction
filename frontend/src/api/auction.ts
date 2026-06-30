@@ -58,12 +58,11 @@ export function confirmWinner() {
 
 export function submitBid(
   action: 'bid' | 'pass' | 'buyout',
-  increment?: number,
-  captainName?: string,
+  opts?: { amount?: number; increment?: number; captainName?: string },
 ) {
   return apiRequest<ServerAuctionState>('/auction/bid', {
     method: 'POST',
-    body: JSON.stringify({ action, increment, captainName }),
+    body: JSON.stringify({ action, ...opts }),
   })
 }
 

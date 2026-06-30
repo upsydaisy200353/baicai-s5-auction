@@ -86,6 +86,7 @@ class BidOrderPayload(BaseModel):
 
 class BidPayload(BaseModel):
     action: Literal["bid", "pass", "buyout"]
+    amount: int | None = Field(default=None, ge=10)
     increment: int | None = Field(default=None, ge=10, le=100)
     captainName: str | None = None
 
@@ -320,7 +321,12 @@ def auction_bid(payload: BidPayload, user: dict = Depends(require_captain_or_adm
         if not captain_name:
             raise HTTPException(403, "非队长账号")
 
-    err = auction.submit_bid(captain_name, payload.action, payload.increment)
+    err = auction.submit_bid(
+        captain_name,
+        payload.action,
+        amount=payload.amount,
+        increment=payload.increment,
+    )
     if err:
         raise HTTPException(400, err)
     return auction.to_state()

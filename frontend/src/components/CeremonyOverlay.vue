@@ -71,9 +71,9 @@ onUnmounted(stopSpin)
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
         <li>管理员确定五个位置池的拍卖顺序</li>
         <li>管理员可设定队长出价先后</li>
-        <li>每池随机抽取选手，逐个拍卖</li>
-        <li>首轮实力强→弱出价，后续资金少→多出价</li>
-        <li>加价 10~100w，一口价仅首轮可用</li>
+        <li>英式增价拍卖：出价须为 10 的倍数，须高于当前价且满足最低加价</li>
+        <li>放弃后退出该选手的后续竞拍；其余人皆放弃时落槌成交</li>
+        <li>一轮内无人加价则最高价者胜出；加价 10~100w，一口价仅首轮可用</li>
       </ul>
       <div class="captain-preview">
         <span v-for="c in captains" :key="c.name" class="cap-chip">

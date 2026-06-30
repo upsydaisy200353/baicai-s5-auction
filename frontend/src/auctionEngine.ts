@@ -264,9 +264,12 @@ export class AuctionEngine {
         highestBidder: this.highestBidder?.name ?? null,
         roundNum: this.roundNum,
         lastIncrement: this.lastIncrement,
+        minNextBid: this.currentPrice + MIN_INCREMENT,
+        minRaise: MIN_INCREMENT,
         isFirstRound: this.roundNum === 1,
         turnCaptain: deepClone(cap),
         order: deepClone(this.order),
+        passedCaptains: [],
       }
       return
     }
