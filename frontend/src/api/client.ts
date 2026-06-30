@@ -1,0 +1,45 @@
+const TOKEN_KEY = 'auction_token'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
+}
+
+export function authHeaders(): HeadersInit {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...init?.headers,
+    },
+  })
+  if (res.status === 401) {
+    setToken(null)
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login'
+    }
+    throw new Error('登录已失效，请重新登录')
+  }
+  if (!res.ok) {
+    let msg = res.statusText
+    try {
+      const body = await res.json()
+      msg = body.detail || body.message || msg
+    } catch {
+      const text = await res.text()
+      if (text) msg = text
+    }
+    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))
+  }
+  return res.json()
+}
