@@ -16,6 +16,8 @@ function defaultOrder(caps: Captain[]) {
 }
 
 const order = ref<string[]>([])
+const dragIndex = ref<number | null>(null)
+const overIndex = ref<number | null>(null)
 
 watch(
   () => [props.captains, props.savedOrder] as const,
@@ -29,18 +31,50 @@ watch(
   { immediate: true },
 )
 
+function reorder(from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= order.value.length || to >= order.value.length) {
+    return
+  }
+  const next = [...order.value]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item!)
+  order.value = next
+}
+
 function moveUp(index: number) {
   if (index <= 0) return
-  const next = [...order.value]
-  ;[next[index - 1], next[index]] = [next[index], next[index - 1]!]
-  order.value = next
+  reorder(index, index - 1)
 }
 
 function moveDown(index: number) {
   if (index >= order.value.length - 1) return
-  const next = [...order.value]
-  ;[next[index], next[index + 1]] = [next[index + 1]!, next[index]]
-  order.value = next
+  reorder(index, index + 1)
+}
+
+function onDragStart(index: number, e: DragEvent) {
+  dragIndex.value = index
+  overIndex.value = index
+  e.dataTransfer?.setData('text/plain', String(index))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+
+function onDragOver(index: number, e: DragEvent) {
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  overIndex.value = index
+}
+
+function onDrop(index: number, e: DragEvent) {
+  e.preventDefault()
+  const from = dragIndex.value
+  if (from != null) reorder(from, index)
+  dragIndex.value = null
+  overIndex.value = null
+}
+
+function onDragEnd() {
+  dragIndex.value = null
+  overIndex.value = null
 }
 
 function resetDefault() {
@@ -56,11 +90,25 @@ function onConfirm() {
   <div class="bid-order-panel card">
     <h3 class="panel-title">队长出价顺序</h3>
     <p class="panel-desc">
-      管理员设定各队长竞价先后；保存后从<strong>下一轮</strong>起生效。未设定时首轮按实力、后续按资金。
+      拖拽调整先后，或使用 ↑↓ 微调；保存后从<strong>下一轮</strong>起生效。未设定时首轮按实力、后续按资金。
     </p>
 
     <ol class="order-list">
-      <li v-for="(name, i) in order" :key="name" class="order-item">
+      <li
+        v-for="(name, i) in order"
+        :key="name"
+        class="order-item"
+        :class="{
+          dragging: dragIndex === i,
+          'drop-over': overIndex === i && dragIndex !== null && dragIndex !== i,
+        }"
+        draggable="true"
+        @dragstart="onDragStart(i, $event)"
+        @dragover="onDragOver(i, $event)"
+        @drop="onDrop(i, $event)"
+        @dragend="onDragEnd"
+      >
+        <span class="drag-handle" title="拖拽排序" aria-hidden="true">⋮⋮</span>
         <span class="order-num">{{ i + 1 }}</span>
         <span class="order-label">{{ name }}</span>
         <span class="order-actions">
@@ -116,10 +164,43 @@ function onConfirm() {
 .order-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: var(--bg-hover);
   border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: grab;
+  user-select: none;
+  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.order-item:active {
+  cursor: grabbing;
+}
+
+.order-item.dragging {
+  opacity: 0.45;
+  border-color: var(--accent);
+}
+
+.order-item.drop-over {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-dim);
+}
+
+.drag-handle {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: -0.15em;
+  line-height: 1;
+  padding: 0.15rem 0.1rem;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.order-item:hover .drag-handle {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .order-num {
