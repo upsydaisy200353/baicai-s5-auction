@@ -60,6 +60,7 @@ class RosterPayload(BaseModel):
     startPrice: int = Field(ge=0, default=0)
     buyoutPrice: int | None = Field(default=None, ge=0)
     funds: int | None = Field(default=None, ge=0)
+    avatar: str | None = None
 
     @model_validator(mode="after")
     def resolve_pool(self):
@@ -76,8 +77,8 @@ class RosterPayload(BaseModel):
         return self
 
 
-class PoolOrderPayload(BaseModel):
-    order: list[Literal["Top", "Jungle", "Mid", "Bot", "Support"]] = Field(min_length=5, max_length=5)
+class PoolSelectPayload(BaseModel):
+    pool: Literal["Top", "Jungle", "Mid", "Bot", "Support"]
 
 
 class BidOrderPayload(BaseModel):
@@ -102,6 +103,7 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
                     "rating": e["startPrice"],
                     "funds": e["funds"],
                     "poolLetter": e["poolLetter"],
+                    "avatar": e.get("avatar"),
                     "team": [],
                 }
             )
@@ -113,12 +115,61 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
                     "startPrice": e["startPrice"],
                     "buyoutPrice": e["buyoutPrice"],
                     "position": e["position"],
+                    "avatar": e.get("avatar"),
                     "sold": False,
                     "finalPrice": None,
                     "winner": None,
                 }
             )
     return {"entries": entries, "players": players, "captains": captains}
+
+
+def _avatar_map() -> dict[str, str | None]:
+    return {
+        e["serial"]: e.get("avatar")
+        for e in list_roster()
+        if e["identity"] == "player" and e.get("serial")
+    }
+
+
+def _captain_avatar_map() -> dict[str, str | None]:
+    return {
+        e["name"]: e.get("avatar")
+        for e in list_roster()
+        if e["identity"] == "captain"
+    }
+
+
+def _apply_avatar(player: dict | None, avatars: dict[str, str | None]) -> None:
+    if not player:
+        return
+    serial = player.get("serial")
+    if serial and serial in avatars:
+        player["avatar"] = avatars[serial]
+
+
+def enrich_auction_state(state: dict) -> dict:
+    """拍卖进行中内存里的选手/队长可能缺少 avatar，从名单库补全。"""
+    avatars = _avatar_map()
+    cap_avatars = _captain_avatar_map()
+    for p in state.get("players", []):
+        _apply_avatar(p, avatars)
+    for c in state.get("captains", []):
+        name = c.get("name")
+        if name and name in cap_avatars:
+            c["avatar"] = cap_avatars[name]
+    _apply_avatar(state.get("currentPlayer"), avatars)
+    if state.get("bidding") and state["bidding"].get("player"):
+        _apply_avatar(state["bidding"]["player"], avatars)
+    for p in state.get("drawCandidates", []):
+        _apply_avatar(p, avatars)
+    if state.get("lastResult") and state["lastResult"].get("player"):
+        _apply_avatar(state["lastResult"]["player"], avatars)
+    return state
+
+
+def auction_state_response() -> dict:
+    return enrich_auction_state(auction.to_state())
 
 
 def load_auction_from_db() -> None:
@@ -131,6 +182,13 @@ def startup():
     init_db()
     seed_if_empty()
     seed_users()
+    try:
+        from assign_avatars import assign_player_avatars, ensure_avatar_db_paths
+
+        if assign_player_avatars() == 0:
+            ensure_avatar_db_paths()
+    except Exception:
+        pass
     load_auction_from_db()
 
 
@@ -247,31 +305,31 @@ def reset_roster(_user: dict = Depends(require_admin)):
 
 @app.get("/api/auction/state")
 def auction_state(_user: dict = Depends(get_current_user)):
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/start")
 def auction_start(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.start()
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/begin")
 def auction_begin(_user: dict = Depends(require_admin)):
     auction.begin_pool_select()
-    return auction.to_state()
+    return auction_state_response()
 
 
-@app.post("/api/auction/set-pool-order")
-def auction_set_pool_order(
-    payload: PoolOrderPayload,
+@app.post("/api/auction/select-pool")
+def auction_select_pool(
+    payload: PoolSelectPayload,
     _user: dict = Depends(require_admin),
 ):
-    err = auction.set_pool_order(payload.order)
+    err = auction.select_next_pool(payload.pool)
     if err:
         raise HTTPException(400, err)
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/set-bid-order")
@@ -282,7 +340,7 @@ def auction_set_bid_order(
     err = auction.set_bid_order(payload.captainNames)
     if err:
         raise HTTPException(400, err)
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/confirm-bid-prep")
@@ -293,25 +351,25 @@ def auction_confirm_bid_prep(
     err = auction.confirm_bid_prep(payload.captainNames)
     if err:
         raise HTTPException(400, err)
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/confirm-pool")
 def auction_confirm_pool(_user: dict = Depends(require_admin)):
     auction.confirm_pool_enter()
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/reveal-draw")
 def auction_reveal_draw(_user: dict = Depends(require_admin)):
     auction.reveal_draw()
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/confirm-winner")
 def auction_confirm_winner(_user: dict = Depends(require_admin)):
     auction.confirm_winner()
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/bid")
@@ -340,14 +398,14 @@ def auction_bid(payload: BidPayload, user: dict = Depends(require_captain_or_adm
     )
     if err:
         raise HTTPException(400, err)
-    return auction.to_state()
+    return auction_state_response()
 
 
 @app.post("/api/auction/reset")
 def auction_reset(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.reset()
-    return auction.to_state()
+    return auction_state_response()
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

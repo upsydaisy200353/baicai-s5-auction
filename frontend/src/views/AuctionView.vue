@@ -8,8 +8,7 @@ import {
   fetchAuctionState,
   revealDraw,
   resetAuction as apiResetAuction,
-  setBidOrder,
-  setPoolOrder,
+  selectPool,
   startAuction,
   submitBid,
   type ServerAuctionState,
@@ -22,7 +21,7 @@ import BidPanel from '../components/BidPanel.vue'
 import AuctionStage from '../components/AuctionStage.vue'
 import CeremonyTimeline from '../components/CeremonyTimeline.vue'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
-import PoolOrderPanel from '../components/PoolOrderPanel.vue'
+import PoolPickPanel from '../components/PoolPickPanel.vue'
 import BidOrderPanel from '../components/BidOrderPanel.vue'
 import { buildRosterRowsFromEntries, captainCanBidForPosition, captainSkipReason } from '../rosterUtils'
 import { POSITION_NAMES } from '../constants'
@@ -97,12 +96,22 @@ const rosterRows = computed((): RosterRow[] => {
   return buildRosterRowsFromEntries(entries.value).map((row) => {
     if (row.kind === 'player') {
       const live = playerMap.get(row.data.serial)
-      return live ? { kind: 'player' as const, data: live } : row
+      const entry = entries.value.find((e) => e.serial === row.data.serial)
+      const avatar = live?.avatar ?? entry?.avatar ?? row.data.avatar
+      return live
+        ? { kind: 'player' as const, data: { ...live, avatar } }
+        : avatar
+          ? { kind: 'player' as const, data: { ...row.data, avatar } }
+          : row
     }
     const live = captainMap.get(row.data.name)
+    const entry = entries.value.find((e) => e.identity === 'captain' && e.name === row.data.name)
+    const avatar = live?.avatar ?? entry?.avatar ?? row.data.avatar
     return live
-      ? { kind: 'captain' as const, data: { ...live, poolLetter: row.data.poolLetter } }
-      : row
+      ? { kind: 'captain' as const, data: { ...live, poolLetter: row.data.poolLetter, avatar } }
+      : avatar
+        ? { kind: 'captain' as const, data: { ...row.data, avatar } }
+        : row
   })
 })
 
@@ -149,12 +158,8 @@ async function onBegin() {
   await runAction(beginCeremony)
 }
 
-async function onSetPoolOrder(order: Position[]) {
-  await runAction(() => setPoolOrder(order))
-}
-
-async function onSetBidOrder(names: string[]) {
-  await runAction(() => setBidOrder(names), '出价顺序已保存')
+async function onSelectPool(pool: Position) {
+  await runAction(() => selectPool(pool))
 }
 
 async function onConfirmBidPrep(names: string[]) {
@@ -230,15 +235,21 @@ async function onPass() {
         @confirm-winner="onConfirmWinner"
       />
 
-      <header class="header">
+      <header class="header card fade-in">
         <div class="header-left">
-          <h1 class="title">白菜杯 S5 选人仪式</h1>
-          <p class="subtitle">
-            已登录：<strong>{{ user?.displayName }}</strong>
-            <span class="role-tag">{{ isAdmin ? '管理员' : '队长' }}</span>
-            <span v-if="isAdmin" class="sim-tag">可代队长操作</span>
-            · 多人同步拍卖
-          </p>
+          <img src="/logo.svg" alt="" class="header-logo" />
+          <div>
+            <p class="header-eyebrow">BAICAI CUP · SEASON 5</p>
+            <h1 class="title">选人仪式现场</h1>
+            <p class="subtitle">
+              <span class="user-pill">
+                <span class="user-dot" />
+                {{ user?.displayName }}
+              </span>
+              <span class="role-tag">{{ isAdmin ? '管理员' : '队长' }}</span>
+              <span v-if="isAdmin" class="sim-tag">可代队长操作</span>
+            </p>
+          </div>
         </div>
         <div class="header-actions">
           <template v-if="isAdmin">
@@ -257,20 +268,15 @@ async function onPass() {
 
       <CeremonyTimeline :phase="state.phase" />
 
-      <!-- 仪式配置：位置池 + 队长顺序 -->
-      <div v-if="state.phase === 'pool_select' && isAdmin" class="setup-section">
-        <PoolOrderPanel @confirm="onSetPoolOrder" />
-        <BidOrderPanel
-          :captains="state.captains"
-          :saved-order="state.bidOrder"
-          pool-label="首场预备"
-          confirm-label="暂存出价顺序"
-          @confirm="onSetBidOrder"
-        />
-      </div>
+      <PoolPickPanel
+        v-if="state.phase === 'pool_select' && isAdmin"
+        :available-pools="state.availablePools"
+        :pool-order="state.poolOrder"
+        @select="onSelectPool"
+      />
 
       <div v-else-if="state.phase === 'pool_select'" class="banner info">
-        等待管理员设定位置池与出价顺序…
+        等待管理员选择下一个位置池…
       </div>
 
       <BidOrderPanel
@@ -347,68 +353,118 @@ async function onPass() {
 
 .banner {
   padding: 0.75rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin-bottom: 1rem;
   font-size: 0.875rem;
+  border: 1px solid transparent;
+  animation: fadeUp 0.35s ease;
 }
 
 .banner.info {
-  background: rgba(59, 130, 246, 0.1);
-  color: #93c5fd;
+  background: rgba(56, 189, 248, 0.08);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.2);
 }
 
 .banner.error {
   background: var(--red-dim);
   color: var(--red);
+  border-color: rgba(248, 113, 113, 0.25);
 }
 
 .banner.warn {
   background: var(--gold-dim);
   color: var(--gold);
+  border-color: rgba(245, 197, 66, 0.25);
 }
 
 .header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-logo {
+  width: 52px;
+  height: 52px;
+  filter: drop-shadow(0 0 12px rgba(74, 222, 128, 0.35));
+  flex-shrink: 0;
+}
+
+.header-eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  color: var(--cabbage);
+  margin-bottom: 0.15rem;
 }
 
 .title {
-  font-size: 1.5rem;
+  font-family: var(--font-display);
+  font-size: 1.65rem;
   font-weight: 800;
-  background: linear-gradient(90deg, var(--gold), #fde68a);
+  background: linear-gradient(135deg, #fff 20%, var(--gold-bright) 60%, var(--cabbage));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  line-height: 1.2;
 }
 
 .subtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   font-size: 0.8125rem;
   color: var(--text-muted);
-  margin-top: 0.15rem;
+  margin-top: 0.35rem;
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.user-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cabbage);
+  box-shadow: 0 0 6px var(--cabbage);
 }
 
 .role-tag {
-  display: inline-block;
-  margin-left: 0.35rem;
-  padding: 0.1rem 0.45rem;
+  padding: 0.12rem 0.5rem;
   border-radius: 999px;
-  background: var(--accent-glow);
-  color: var(--accent);
+  background: var(--cabbage-dim);
+  color: var(--cabbage);
   font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .sim-tag {
-  display: inline-block;
-  margin-left: 0.25rem;
-  padding: 0.1rem 0.45rem;
+  padding: 0.12rem 0.5rem;
   border-radius: 999px;
   background: var(--gold-dim);
   color: var(--gold);
   font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -454,9 +510,12 @@ async function onPass() {
 }
 
 .section-title {
-  font-size: 0.875rem;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 0.5rem;
-  font-weight: 600;
+  margin-bottom: 0.65rem;
 }
 </style>

@@ -60,6 +60,12 @@ def reseed() -> None:
     clear_roster()
     for i, row in enumerate(SEED_ROWS, start=1):
         create_entry({**row, "sortOrder": i})
+    try:
+        from assign_avatars import assign_player_avatars
+
+        assign_player_avatars()
+    except Exception as exc:
+        print(f"头像分配跳过: {exc}")
 
 
 if __name__ == "__main__":

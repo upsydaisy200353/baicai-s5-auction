@@ -10,6 +10,7 @@ export function entriesToPlayers(entries: RosterEntry[]): Player[] {
       startPrice: e.startPrice,
       buyoutPrice: e.buyoutPrice ?? 0,
       position: e.position,
+      avatar: e.avatar ?? null,
       sold: false,
       finalPrice: null,
       winner: null,
@@ -24,6 +25,7 @@ export function entriesToCaptains(entries: RosterEntry[]): Captain[] {
       rating: e.startPrice,
       funds: e.funds ?? 0,
       poolLetter: e.poolLetter,
+      avatar: e.avatar ?? null,
       team: [],
     }))
 }
@@ -40,6 +42,7 @@ export function buildRosterRowsFromEntries(entries: RosterEntry[]): RosterRow[] 
               rating: e.startPrice,
               funds: e.funds ?? 0,
               poolLetter: e.poolLetter,
+              avatar: e.avatar ?? null,
               team: [],
             },
           }
@@ -51,6 +54,7 @@ export function buildRosterRowsFromEntries(entries: RosterEntry[]): RosterRow[] 
               startPrice: e.startPrice,
               buyoutPrice: e.buyoutPrice ?? 0,
               position: e.position,
+              avatar: e.avatar ?? null,
               sold: false,
               finalPrice: null,
               winner: null,

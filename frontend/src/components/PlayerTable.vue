@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER } from '../constants'
+import { POOL_LETTERS, POSITION_COLORS, POSITION_NAMES, POSITION_TO_LETTER } from '../constants'
+import PlayerAvatar from './PlayerAvatar.vue'
 import type { Captain, Position, RosterRow } from '../types'
 
 defineProps<{
@@ -23,6 +24,7 @@ function captainPosLabel(letter: Captain['poolLetter']) {
     <table class="player-table">
       <thead>
         <tr>
+          <th class="col-avatar" />
           <th>序号</th>
           <th>ID</th>
           <th>位置</th>
@@ -48,15 +50,32 @@ function captainPosLabel(letter: Captain['poolLetter']) {
           }"
         >
           <template v-if="row.kind === 'player'">
+            <td class="col-avatar">
+              <PlayerAvatar
+                :name="row.data.name"
+                :serial="row.data.serial"
+                :avatar="row.data.avatar"
+                :position="row.data.position"
+                size="sm"
+              />
+            </td>
             <td>{{ row.data.serial }}</td>
             <td class="name">{{ row.data.name }}</td>
-            <td><span class="badge badge-blue">{{ posLabel(row.data.position) }}</span></td>
+            <td><span class="badge badge-blue pos-badge" :style="{ '--pos-color': POSITION_COLORS[row.data.position] }">{{ posLabel(row.data.position) }}</span></td>
             <td>{{ row.data.startPrice }}w</td>
             <td>{{ row.data.buyoutPrice }}w</td>
             <td>{{ row.data.finalPrice != null ? row.data.finalPrice + 'w' : '—' }}</td>
             <td>{{ row.data.winner ?? '—' }}</td>
           </template>
           <template v-else>
+            <td class="col-avatar">
+              <PlayerAvatar
+                :name="row.data.name"
+                :avatar="row.data.avatar"
+                :position="POOL_LETTERS[row.data.poolLetter]"
+                size="sm"
+              />
+            </td>
             <td><span class="badge badge-gold">队长</span></td>
             <td class="name captain-name">{{ row.data.name }}</td>
             <td><span class="badge badge-blue">{{ captainPosLabel(row.data.poolLetter) }}</span></td>
@@ -76,32 +95,56 @@ function captainPosLabel(letter: Captain['poolLetter']) {
   overflow-x: auto;
   max-height: 420px;
   overflow-y: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 .player-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 0.8rem;
 }
 
 .player-table th {
   text-align: left;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 0.8rem;
   color: var(--text-muted);
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--bg-card);
+  background: rgba(14, 20, 32, 0.95);
+  backdrop-filter: blur(8px);
+  z-index: 1;
 }
 
 .player-table td {
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid rgba(45, 58, 79, 0.5);
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  transition: background 0.15s ease;
+}
+
+.player-table tbody tr:hover:not(.captain) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.pos-badge {
+  background: color-mix(in srgb, var(--pos-color) 14%, transparent) !important;
+  color: var(--pos-color) !important;
+  border: 1px solid color-mix(in srgb, var(--pos-color) 28%, transparent);
 }
 
 .player-table .name {
   font-weight: 600;
+}
+
+.col-avatar {
+  width: 44px;
+  padding-right: 0.25rem !important;
 }
 
 .player-table tr.captain {

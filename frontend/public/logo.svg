@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#86efac"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+    <linearGradient id="cup" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#4ade80" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="56" fill="url(#glow)"/>
+  <ellipse cx="60" cy="52" rx="34" ry="30" fill="url(#leaf)"/>
+  <ellipse cx="42" cy="48" rx="14" ry="22" fill="#4ade80" opacity="0.7" transform="rotate(-25 42 48)"/>
+  <ellipse cx="78" cy="48" rx="14" ry="22" fill="#4ade80" opacity="0.7" transform="rotate(25 78 48)"/>
+  <ellipse cx="60" cy="42" rx="12" ry="18" fill="#bbf7d0" opacity="0.85"/>
+  <path d="M38 68c4 18 40 18 44 0" stroke="#166534" stroke-width="3" stroke-linecap="round"/>
+  <path d="M48 88h24l-4 18H52l-4-18z" fill="url(#cup)"/>
+  <rect x="46" y="84" width="28" height="6" rx="2" fill="#d97706"/>
+  <text x="60" y="99" text-anchor="middle" font-family="system-ui,sans-serif" font-size="9" font-weight="800" fill="#78350f">S5</text>
+</svg>

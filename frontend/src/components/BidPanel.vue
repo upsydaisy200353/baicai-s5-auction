@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { MAX_INCREMENT } from '../auctionEngine'
+import PlayerAvatar from './PlayerAvatar.vue'
 import type { BiddingContext } from '../types'
 
 const props = defineProps<{
@@ -93,6 +94,20 @@ function onQuickIncrement(inc: number) {
 
 <template>
   <div v-if="bidding && canBid" class="bid-panel card my-turn">
+    <img src="/images/auction-accent.png" alt="" class="bid-accent" aria-hidden="true" />
+    <div class="bid-player">
+      <PlayerAvatar
+        :name="bidding.player.name"
+        :serial="bidding.player.serial"
+        :avatar="bidding.player.avatar"
+        :position="bidding.player.position"
+        size="md"
+      />
+      <div>
+        <p class="bid-player-name">{{ bidding.player.name }}</p>
+        <p class="bid-player-serial">{{ bidding.player.serial }}</p>
+      </div>
+    </div>
     <h3 class="panel-title">
       <template v-if="proxyMode">代 {{ bidding.turnCaptain.name }} 出价（模拟）</template>
       <template v-else>轮到你出价 — {{ bidding.turnCaptain.name }}</template>
@@ -177,22 +192,68 @@ function onQuickIncrement(inc: number) {
 </template>
 
 <style scoped>
-.panel-title {
+.bid-player {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.bid-player-name {
+  font-family: var(--font-display);
+  font-weight: 700;
   font-size: 1rem;
-  margin-bottom: 0.75rem;
+}
+
+.bid-player-serial {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  margin-bottom: 0.85rem;
   color: var(--gold);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-title::before {
+  content: '🔨';
+  font-size: 0.9rem;
 }
 
 .my-turn {
-  border-color: var(--gold);
-  box-shadow: 0 0 24px var(--gold-dim);
+  border-color: rgba(245, 197, 66, 0.4);
+  box-shadow: var(--shadow-card), 0 0 32px rgba(245, 197, 66, 0.12);
+  animation: fadeUp 0.35s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.bid-accent {
+  position: absolute;
+  right: -6%;
+  top: -12%;
+  width: 140px;
+  opacity: 0.12;
+  pointer-events: none;
+  transform: rotate(8deg);
 }
 
 .bid-info {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  gap: 0.55rem;
   margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
 .info-row {
@@ -231,14 +292,22 @@ function onQuickIncrement(inc: number) {
 }
 
 .bid-input {
-  background: var(--bg-hover);
+  background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
   color: var(--text);
-  font-size: 1rem;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
   width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.bid-input:focus {
+  outline: none;
+  border-color: rgba(245, 197, 66, 0.45);
+  box-shadow: 0 0 0 3px rgba(245, 197, 66, 0.1);
 }
 
 .bid-submit {
@@ -272,8 +341,9 @@ function onQuickIncrement(inc: number) {
 }
 
 .preset-btn {
-  padding: 0.25rem 0.5rem;
+  padding: 0.3rem 0.6rem;
   font-size: 0.75rem;
+  border-radius: 999px;
 }
 
 .passed-hint {
@@ -289,6 +359,9 @@ function onQuickIncrement(inc: number) {
   color: var(--text-muted);
   font-size: 0.875rem;
   flex-wrap: wrap;
+  padding: 1rem 1.15rem;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
 }
 
 .passed-mini {

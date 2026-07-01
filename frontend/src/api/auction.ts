@@ -30,10 +30,10 @@ export function beginCeremony() {
   return apiRequest<ServerAuctionState>('/auction/begin', { method: 'POST' })
 }
 
-export function setPoolOrder(order: Position[]) {
-  return apiRequest<ServerAuctionState>('/auction/set-pool-order', {
+export function selectPool(pool: Position) {
+  return apiRequest<ServerAuctionState>('/auction/select-pool', {
     method: 'POST',
-    body: JSON.stringify({ order }),
+    body: JSON.stringify({ pool }),
   })
 }
 

@@ -48,6 +48,14 @@ def _now() -> str:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+    migrate_db()
+
+
+def migrate_db() -> None:
+    with connect() as conn:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(roster)").fetchall()}
+        if "avatar" not in cols:
+            conn.execute("ALTER TABLE roster ADD COLUMN avatar TEXT")
 
 
 @contextmanager
@@ -75,6 +83,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "startPrice": row["start_price"],
         "buyoutPrice": row["buyout_price"],
         "funds": row["funds"],
+        "avatar": row["avatar"] if "avatar" in row.keys() else None,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
@@ -107,8 +116,8 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO roster
               (sort_order, identity, serial, name, pool_letter,
-               start_price, buyout_price, funds, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               start_price, buyout_price, funds, avatar, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sort_order,
@@ -119,6 +128,7 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("startPrice", 0),
                 data.get("buyoutPrice"),
                 data.get("funds"),
+                data.get("avatar"),
                 now,
                 now,
             ),
@@ -145,6 +155,7 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
               start_price = ?,
               buyout_price = ?,
               funds = ?,
+              avatar = ?,
               updated_at = ?
             WHERE id = ?
             """,
@@ -157,6 +168,7 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
                 merged["startPrice"],
                 merged.get("buyoutPrice"),
                 merged.get("funds"),
+                merged.get("avatar"),
                 now,
                 entry_id,
             ),

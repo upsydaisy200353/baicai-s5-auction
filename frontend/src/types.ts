@@ -9,6 +9,7 @@ export interface Player {
   startPrice: number
   buyoutPrice: number
   position: Position
+  avatar?: string | null
   sold: boolean
   finalPrice: number | null
   winner: string | null
@@ -25,6 +26,7 @@ export interface RosterEntry {
   startPrice: number
   buyoutPrice: number | null
   funds: number | null
+  avatar?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -36,6 +38,7 @@ export interface Captain {
   team: string[]
   /** 表格中所处分区 A~E */
   poolLetter: PoolLetter
+  avatar?: string | null
 }
 
 export type RosterRow =

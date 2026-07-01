@@ -22,7 +22,7 @@ export const MAX_INCREMENT = 100
 /** S4 选人仪式流程（参考白菜杯官方录像） */
 export const CEREMONY_STEPS = [
   { id: 'intro', label: '开场介绍' },
-  { id: 'pool_select', label: '设定位置池顺序' },
+  { id: 'pool_select', label: '选择位置池' },
   { id: 'bid_order_select', label: '设定出价顺序' },
   { id: 'pool_announce', label: '进入位置池' },
   { id: 'pool_draw', label: '随机抽取选手' },
