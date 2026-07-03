@@ -137,7 +137,7 @@ function onIdentityChange(entry: RosterEntry) {
     <header class="admin-header">
       <div>
         <h1 class="title">名单管理</h1>
-        <p class="subtitle">数据保存在 SQLite 数据库，修改后拍卖页刷新即可生效</p>
+        <p class="subtitle">点「保存」后写入数据库；线上需配置 DATABASE_URL 才永久保存</p>
       </div>
       <div class="actions">
         <button class="btn-ghost" :disabled="loading" @click="load">刷新</button>

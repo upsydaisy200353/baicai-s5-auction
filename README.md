@@ -23,20 +23,22 @@ npm run dev             # http://localhost:5173
 
 - **选人仪式** `/` — 需登录；队长在轮到自己时出价，管理员主持流程
 - **名单管理** `/admin` — 仅管理员可访问
-- **登录页** `/login` — 管理员 + 8 位队长账号
+- **登录页** `/login` — 选择管理员或队长身份，**免密**一键进入
 
-### 默认账号
+### 登录身份
 
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
-| 管理员 | `admin` | `admin123` |
-| 队长 | `wuyanzu` / `yazi` / `caps` / `baiweiyi` / `mushroom` / `xxts` / `yume` / `pika` | `captain123` |
+| 角色 | 用户名 |
+|------|--------|
+| 管理员 | `admin` |
+| 队长 | `wuyanzu` / `yazi` / `caps` / `baiweiyi` / `mushroom` / `xxts` / `yume` / `pika` |
 
-队长登录后可在**轮到自己时**出价；管理员可主持全流程，并在竞价阶段**代当前轮次队长**加价/一口价/放弃，便于单人模拟。
+队长进入后可在密封出价阶段提交自己的出价；管理员可主持全流程，并代队长操作，便于单人模拟。
 
 首次启动后端会自动创建账号（`seed_users.py`）；若需重置账号可执行 `python seed_users.py`。
 
-数据库文件：`server/auction.db`（本地开发）。Render 部署使用容器内 SQLite，重启后数据会重置。
+数据库文件：`server/auction.db`（本地开发，永久保存）。
+
+线上部署（Render）默认使用容器内 SQLite，**服务重启后数据会丢失**。要与 [BidKing](https://github.com/upsydaisy200353/bidking) 共用 Neon PostgreSQL 持久化，在 Render 环境变量中设置与 BidKing 相同的 `DATABASE_URL`；本系统会在同一库中自动创建 `baicai_roster`、`baicai_users` 表（与 BidKing 的 `bidking_*` 表互不干扰）。
 
 ## 部署（Render）
 

@@ -7,7 +7,7 @@ import re
 import shutil
 from pathlib import Path
 
-from db import connect, init_db, list_roster, migrate_db
+from db import init_db, list_roster, migrate_db, update_entry
 from seed_users import CAPTAIN_ACCOUNTS
 
 SERVER_DIR = Path(__file__).resolve().parent
@@ -43,19 +43,11 @@ def captain_avatar_key(name: str, entry_id: int | None = None) -> str:
     return f"captain-{slug}"
 
 
-def _assign_entry_avatar(
-    entry: dict,
-    src: Path,
-    key: str,
-    conn,
-) -> None:
+def _assign_entry_avatar(entry: dict, src: Path, key: str) -> None:
     dest = avatar_file_path(key)
     shutil.copy2(src, dest)
     avatar = avatar_public_path(key)
-    conn.execute(
-        "UPDATE roster SET avatar = ?, updated_at = datetime('now') WHERE id = ?",
-        (avatar, entry["id"]),
-    )
+    update_entry(entry["id"], {"avatar": avatar})
 
 
 def assign_player_avatars(
@@ -84,28 +76,27 @@ def assign_player_avatars(
     updated = 0
     idx = 0
 
-    with connect() as conn:
-        for player in players:
-            serial = player["serial"]
-            if not serial:
-                continue
-            if player.get("avatar") and not force and avatar_file_path(serial).is_file():
-                idx += 1
-                continue
-            _assign_entry_avatar(player, pool[idx % len(pool)], serial, conn)
-            print(f"  [选手] {serial} {player['name']} <- {pool[idx % len(pool)].name}")
+    for player in players:
+        serial = player["serial"]
+        if not serial:
+            continue
+        if player.get("avatar") and not force and avatar_file_path(serial).is_file():
             idx += 1
-            updated += 1
+            continue
+        _assign_entry_avatar(player, pool[idx % len(pool)], serial)
+        print(f"  [选手] {serial} {player['name']} <- {pool[idx % len(pool)].name}")
+        idx += 1
+        updated += 1
 
-        for captain in captains:
-            key = captain_avatar_key(captain["name"], captain["id"])
-            if captain.get("avatar") and not force and avatar_file_path(key).is_file():
-                idx += 1
-                continue
-            _assign_entry_avatar(captain, pool[idx % len(pool)], key, conn)
-            print(f"  [队长] {captain['name']} <- {pool[idx % len(pool)].name}")
+    for captain in captains:
+        key = captain_avatar_key(captain["name"], captain["id"])
+        if captain.get("avatar") and not force and avatar_file_path(key).is_file():
             idx += 1
-            updated += 1
+            continue
+        _assign_entry_avatar(captain, pool[idx % len(pool)], key)
+        print(f"  [队长] {captain['name']} <- {pool[idx % len(pool)].name}")
+        idx += 1
+        updated += 1
 
     return updated
 
@@ -114,24 +105,20 @@ def ensure_avatar_db_paths() -> int:
     """若 public 目录已有头像文件，补全数据库路径。"""
     migrate_db()
     updated = 0
-    with connect() as conn:
-        for entry in list_roster():
-            if entry["identity"] == "player":
-                serial = entry.get("serial")
-                if not serial or not avatar_file_path(serial).is_file():
-                    continue
-                path = avatar_public_path(serial)
-            else:
-                key = captain_avatar_key(entry["name"], entry["id"])
-                if not avatar_file_path(key).is_file():
-                    continue
-                path = avatar_public_path(key)
-            if entry.get("avatar") != path:
-                conn.execute(
-                    "UPDATE roster SET avatar = ?, updated_at = datetime('now') WHERE id = ?",
-                    (path, entry["id"]),
-                )
-                updated += 1
+    for entry in list_roster():
+        if entry["identity"] == "player":
+            serial = entry.get("serial")
+            if not serial or not avatar_file_path(serial).is_file():
+                continue
+            path = avatar_public_path(serial)
+        else:
+            key = captain_avatar_key(entry["name"], entry["id"])
+            if not avatar_file_path(key).is_file():
+                continue
+            path = avatar_public_path(key)
+        if entry.get("avatar") != path:
+            update_entry(entry["id"], {"avatar": path})
+            updated += 1
     return updated
 
 

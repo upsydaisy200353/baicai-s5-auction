@@ -18,14 +18,15 @@ from auth import (
     get_optional_user,
     require_admin,
     require_captain_or_admin,
-    verify_password,
 )
 from auction_engine import auction
 from constants import POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER
 from db import (
+    DB_PATH,
     create_entry,
     delete_entry,
     get_entry,
+    get_storage_backend,
     get_user_by_username,
     init_db,
     list_roster,
@@ -46,8 +47,7 @@ app.add_middleware(
 
 
 class LoginPayload(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=64)
 
 
 class RosterPayload(BaseModel):
@@ -70,8 +70,6 @@ class RosterPayload(BaseModel):
             self.position = POOL_LETTERS[self.poolLetter]
         if self.poolLetter is None:
             raise ValueError("poolLetter 或 position 必须提供其一")
-        if self.identity == "player" and self.buyoutPrice is None:
-            raise ValueError("选手必须填写一口价 buyoutPrice")
         if self.identity == "captain" and self.funds is None:
             raise ValueError("队长必须填写竞拍资金 funds")
         return self
@@ -81,14 +79,9 @@ class PoolSelectPayload(BaseModel):
     pool: Literal["Top", "Jungle", "Mid", "Bot", "Support"]
 
 
-class BidOrderPayload(BaseModel):
-    captainNames: list[str] = Field(min_length=1)
-
-
-class BidPayload(BaseModel):
-    action: Literal["bid", "pass", "buyout"]
-    amount: int | None = Field(default=None, ge=10)
-    increment: int | None = Field(default=None, ge=10, le=100)
+class SealedBidPayload(BaseModel):
+    action: Literal["bid", "pass"]
+    amount: int | None = Field(default=None, ge=1)
     captainName: str | None = None
 
 
@@ -112,8 +105,8 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
                 {
                     "serial": e["serial"] or "",
                     "name": e["name"],
-                    "startPrice": e["startPrice"],
-                    "buyoutPrice": e["buyoutPrice"],
+                    "startPrice": e.get("startPrice") or 0,
+                    "buyoutPrice": e.get("buyoutPrice") or 0,
                     "position": e["position"],
                     "avatar": e.get("avatar"),
                     "sold": False,
@@ -159,8 +152,10 @@ def enrich_auction_state(state: dict) -> dict:
         if name and name in cap_avatars:
             c["avatar"] = cap_avatars[name]
     _apply_avatar(state.get("currentPlayer"), avatars)
-    if state.get("bidding") and state["bidding"].get("player"):
-        _apply_avatar(state["bidding"]["player"], avatars)
+    for ctx_key in ("sealedBid", "bidReveal", "playerReveal"):
+        ctx = state.get(ctx_key)
+        if ctx and ctx.get("player"):
+            _apply_avatar(ctx["player"], avatars)
     for p in state.get("drawCandidates", []):
         _apply_avatar(p, avatars)
     if state.get("lastResult") and state["lastResult"].get("player"):
@@ -180,6 +175,8 @@ def load_auction_from_db() -> None:
 @app.on_event("startup")
 def startup():
     init_db()
+    backend = get_storage_backend()
+    print(f"Storage: {'PostgreSQL (DATABASE_URL)' if backend == 'postgres' else f'SQLite ({DB_PATH})'}")
     seed_if_empty()
     seed_users()
     try:
@@ -197,8 +194,8 @@ def startup():
 @app.post("/api/auth/login")
 def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
-    if not user or not verify_password(payload.password, user["passwordHash"]):
-        raise HTTPException(401, "用户名或密码错误")
+    if not user:
+        raise HTTPException(401, "用户不存在")
     token = create_token(user)
     return {
         "token": token,
@@ -219,20 +216,22 @@ def me(user: dict = Depends(get_current_user)):
 
 @app.get("/api/auth/accounts-hint")
 def accounts_hint():
-    """Demo 默认账号提示（不含密码哈希）"""
+    """可选登录身份（免密，仅供前端展示）"""
     return {
-        "admin": {"username": "admin", "password": "admin123", "role": "admin"},
+        "admin": {"username": "admin", "displayName": "管理员", "role": "admin"},
         "captains": [
-            {"username": "wuyanzu", "captain": "吴彦祖"},
-            {"username": "yazi", "captain": "亚子"},
-            {"username": "caps", "captain": "caps"},
-            {"username": "baiweiyi", "captain": "白惟一"},
-            {"username": "mushroom", "captain": "🍄"},
-            {"username": "xxts", "captain": "xxts"},
-            {"username": "yume", "captain": "Yume"},
-            {"username": "pika", "captain": "皮卡"},
+            {"username": username, "displayName": name}
+            for username, name in [
+                ("wuyanzu", "吴彦祖"),
+                ("yazi", "亚子"),
+                ("caps", "caps"),
+                ("baiweiyi", "白惟一"),
+                ("mushroom", "🍄"),
+                ("xxts", "xxts"),
+                ("yume", "Yume"),
+                ("pika", "皮卡"),
+            ]
         ],
-        "captainDefaultPassword": "captain123",
     }
 
 
@@ -240,10 +239,13 @@ def accounts_hint():
 
 @app.get("/api/meta")
 def meta():
+    backend = get_storage_backend()
     return {
         "poolLetters": POOL_LETTERS,
         "positionNames": POSITION_NAMES,
         "positionToLetter": POSITION_TO_LETTER,
+        "storage": backend,
+        "storagePersistent": backend == "postgres",
     }
 
 
@@ -332,37 +334,37 @@ def auction_select_pool(
     return auction_state_response()
 
 
-@app.post("/api/auction/set-bid-order")
-def auction_set_bid_order(
-    payload: BidOrderPayload,
-    _user: dict = Depends(require_admin),
-):
-    err = auction.set_bid_order(payload.captainNames)
-    if err:
-        raise HTTPException(400, err)
-    return auction_state_response()
-
-
-@app.post("/api/auction/confirm-bid-prep")
-def auction_confirm_bid_prep(
-    payload: BidOrderPayload,
-    _user: dict = Depends(require_admin),
-):
-    err = auction.confirm_bid_prep(payload.captainNames)
-    if err:
-        raise HTTPException(400, err)
-    return auction_state_response()
-
-
-@app.post("/api/auction/confirm-pool")
-def auction_confirm_pool(_user: dict = Depends(require_admin)):
-    auction.confirm_pool_enter()
-    return auction_state_response()
-
-
 @app.post("/api/auction/reveal-draw")
 def auction_reveal_draw(_user: dict = Depends(require_admin)):
     auction.reveal_draw()
+    return auction_state_response()
+
+
+@app.post("/api/auction/confirm-bid-reveal")
+def auction_confirm_bid_reveal(_user: dict = Depends(require_admin)):
+    auction.confirm_bid_reveal()
+    return auction_state_response()
+
+
+@app.post("/api/auction/advance-player-reveal")
+def auction_advance_player_reveal(_user: dict = Depends(require_admin)):
+    auction.advance_player_reveal()
+    return auction_state_response()
+
+
+@app.post("/api/auction/open-bids")
+def auction_open_bids(_user: dict = Depends(require_admin)):
+    err = auction.open_sealed_bids()
+    if err:
+        raise HTTPException(400, err)
+    return auction_state_response()
+
+
+@app.post("/api/auction/force-open-bids")
+def auction_force_open_bids(_user: dict = Depends(require_admin)):
+    err = auction.force_open_sealed_bids()
+    if err:
+        raise HTTPException(400, err)
     return auction_state_response()
 
 
@@ -372,29 +374,27 @@ def auction_confirm_winner(_user: dict = Depends(require_admin)):
     return auction_state_response()
 
 
-@app.post("/api/auction/bid")
-def auction_bid(payload: BidPayload, user: dict = Depends(require_captain_or_admin)):
-    if not auction.bidding:
-        raise HTTPException(400, "当前不在竞价阶段")
-    turn_name = auction.bidding["turnCaptain"]["name"]
+@app.post("/api/auction/sealed-bid")
+def auction_sealed_bid(payload: SealedBidPayload, user: dict = Depends(require_captain_or_admin)):
+    if auction.phase != "sealed_bid":
+        raise HTTPException(400, "当前不在密封出价阶段")
 
     if user["role"] == "admin":
-        captain_name = payload.captainName or turn_name
+        captain_name = payload.captainName
+        if not captain_name:
+            raise HTTPException(400, "管理员代投须指定 captainName")
         valid_names = {c["name"] for c in auction.captains}
         if captain_name not in valid_names:
             raise HTTPException(400, "队长不存在")
-        if captain_name != turn_name:
-            raise HTTPException(400, f"当前轮到 {turn_name} 操作")
     else:
         captain_name = user.get("captainName")
         if not captain_name:
             raise HTTPException(403, "非队长账号")
 
-    err = auction.submit_bid(
+    err = auction.submit_sealed_bid(
         captain_name,
         payload.action,
         amount=payload.amount,
-        increment=payload.increment,
     )
     if err:
         raise HTTPException(400, err)
