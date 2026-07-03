@@ -68,6 +68,38 @@ button {
     filter 0.18s ease;
 }
 
+/* router-link 等 <a> 标签复用按钮样式 */
+a.btn-primary,
+a.btn-ghost,
+a.btn-gold,
+a.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    filter 0.18s ease,
+    color 0.18s ease;
+}
+
+a.btn-primary:active,
+a.btn-ghost:active,
+a.btn-gold:active,
+a.btn-danger:active {
+  transform: scale(0.98);
+}
+
 button:active:not(:disabled) {
   transform: scale(0.98);
 }

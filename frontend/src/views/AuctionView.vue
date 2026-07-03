@@ -358,6 +358,7 @@ async function onBuyout() {
 .idle-actions {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
 }

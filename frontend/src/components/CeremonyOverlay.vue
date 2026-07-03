@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
-import { POSITION_NAMES } from '../constants'
+import { computed, ref, watch, onUnmounted } from 'vue'
+import { POSITION_COLORS, POSITION_NAMES } from '../constants'
 import PlayerAvatar from './PlayerAvatar.vue'
 import type { Captain, LastResult, Player, Position } from '../types'
 
@@ -20,48 +20,65 @@ const emit = defineEmits<{
   confirmWinner: []
 }>()
 
-const MYSTERY_LABELS = ['???', '拍卖标的', '神秘选手', '???']
-
-const spinName = ref('???')
+const carouselIndex = ref(0)
 const spinning = ref(false)
 let spinTimer: ReturnType<typeof setInterval> | null = null
 
-function startSpin() {
+const currentCarouselPlayer = computed(() => {
+  const list = props.drawCandidates
+  if (!list.length) return null
+  return list[carouselIndex.value % list.length]!
+})
+
+const poolColor = computed(() =>
+  props.currentPool ? POSITION_COLORS[props.currentPool] : 'var(--purple)',
+)
+
+function startCarousel() {
+  const list = props.drawCandidates
+  if (!list.length) {
+    if (props.isAdmin) emit('revealDraw')
+    return
+  }
+
+  stopCarousel()
   spinning.value = true
+  carouselIndex.value = 0
   let tick = 0
+  const totalTicks = 28
+
   spinTimer = setInterval(() => {
-    spinName.value = MYSTERY_LABELS[tick % MYSTERY_LABELS.length]!
+    carouselIndex.value = (carouselIndex.value + 1) % list.length
     tick++
-    if (tick > 28) {
-      stopSpin()
+    if (tick >= totalTicks) {
+      stopCarousel()
       if (props.isAdmin) emit('revealDraw')
     }
   }, 80)
 }
 
-function stopSpin() {
+function stopCarousel() {
   if (spinTimer) clearInterval(spinTimer)
   spinTimer = null
   spinning.value = false
 }
 
 watch(
-  () => props.phase,
-  (phase) => {
+  () => [props.phase, props.drawCandidates.length] as const,
+  ([phase]) => {
     if (phase === 'pool_draw') {
       if (!spinning.value && !spinTimer) {
-        spinName.value = '???'
-        setTimeout(startSpin, 400)
+        setTimeout(startCarousel, 400)
       }
     } else {
-      stopSpin()
-      spinName.value = '???'
+      stopCarousel()
+      carouselIndex.value = 0
     }
   },
   { immediate: true },
 )
 
-onUnmounted(stopSpin)
+onUnmounted(stopCarousel)
 </script>
 
 <template>
@@ -96,16 +113,24 @@ onUnmounted(stopSpin)
     <div class="draw-rays" aria-hidden="true" />
     <div class="overlay-card draw-card">
       <p class="eyebrow">抽取拍卖标的</p>
-      <div class="slot-frame" :class="{ spinning }">
-        <div class="slot-scanline" />
-        <div class="mystery-slot">
-          <span class="mystery-big">?</span>
-          <h2 class="spin-name" :class="{ spinning }">{{ spinName }}</h2>
+      <div class="slot-frame" :class="{ spinning }" :style="{ '--pool-color': poolColor }">
+        <div v-if="currentCarouselPlayer" class="carousel-slot" :class="{ spinning }">
+          <PlayerAvatar
+            :name="currentCarouselPlayer.name"
+            :serial="currentCarouselPlayer.serial"
+            :avatar="currentCarouselPlayer.avatar"
+            :position="currentCarouselPlayer.position"
+            size="xl"
+            class="carousel-avatar"
+          />
+          <p class="carousel-serial">{{ currentCarouselPlayer.serial }}</p>
+          <h2 class="carousel-name">{{ currentCarouselPlayer.name }}</h2>
         </div>
+        <p v-else class="carousel-empty">该池暂无候选选手</p>
       </div>
       <p class="overlay-desc">
         从 <strong>{{ POSITION_NAMES[currentPool!] }}</strong> 池
-        {{ drawCandidates.length }} 名候选中锁定标的…
+        {{ drawCandidates.length }} 名候选中抽取标的…
       </p>
       <div class="draw-dots">
         <span v-for="n in 3" :key="n" class="dot" :style="{ animationDelay: `${n * 0.2}s` }" />
@@ -332,35 +357,52 @@ onUnmounted(stopSpin)
 }
 
 .slot-frame.spinning {
-  border-color: rgba(168, 85, 247, 0.45);
-  box-shadow: 0 0 40px rgba(168, 85, 247, 0.15);
+  border-color: color-mix(in srgb, var(--pool-color) 55%, transparent);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--pool-color) 25%, transparent);
 }
 
-.mystery-slot {
+.carousel-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  min-height: 200px;
+  justify-content: center;
 }
 
-.mystery-big {
+.carousel-slot.spinning .carousel-avatar {
+  animation: carouselPulse 0.08s ease infinite;
+}
+
+.carousel-slot.spinning .carousel-name {
+  animation: slotTick 0.08s ease infinite;
+}
+
+@keyframes carouselPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.97); opacity: 0.92; }
+}
+
+.carousel-serial {
   font-family: var(--font-display);
-  font-size: 3rem;
-  font-weight: 800;
-  color: #c084fc;
-  opacity: 0.6;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--pool-color, var(--accent));
+  margin-top: 0.5rem;
 }
 
-.spin-name {
+.carousel-name {
   font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 800;
   min-height: 2.2rem;
+  color: var(--text);
 }
 
-.spin-name.spinning {
-  color: #c084fc;
-  animation: slotTick 0.08s ease infinite;
+.carousel-empty {
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 @keyframes slotTick {
