@@ -1,6 +1,13 @@
 import { apiRequest } from './client'
-import type { Captain, Player, Position } from '../types'
-import type { AuctionPhase, BiddingContext, LastResult, LogEntry } from '../types'
+import type {
+  AuctionPhase,
+  Captain,
+  LastResult,
+  LogEntry,
+  OpenBidContext,
+  Player,
+  Position,
+} from '../types'
 
 export interface ServerAuctionState {
   phase: AuctionPhase
@@ -10,16 +17,26 @@ export interface ServerAuctionState {
   currentPoolIndex: number
   currentPool: Position | null
   currentPlayer: Player | null
-  bidding: BiddingContext | null
+  openBid: OpenBidContext | null
   logs: LogEntry[]
   drawCandidates: Player[]
   lastResult: LastResult | null
   availablePools: Position[]
-  bidOrder: string[]
 }
 
 export function fetchAuctionState() {
   return apiRequest<ServerAuctionState>('/auction/state')
+}
+
+/** 观战大屏 — 无需登录 */
+export function fetchSpectatorState() {
+  return fetch('/api/auction/spectator').then(async (res) => {
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail ?? `HTTP ${res.status}`)
+    }
+    return res.json() as Promise<ServerAuctionState>
+  })
 }
 
 export function startAuction() {
@@ -37,35 +54,21 @@ export function selectPool(pool: Position) {
   })
 }
 
-export function setBidOrder(captainNames: string[]) {
-  return apiRequest<ServerAuctionState>('/auction/set-bid-order', {
-    method: 'POST',
-    body: JSON.stringify({ captainNames }),
-  })
-}
-
-export function confirmBidPrep(captainNames: string[]) {
-  return apiRequest<ServerAuctionState>('/auction/confirm-bid-prep', {
-    method: 'POST',
-    body: JSON.stringify({ captainNames }),
-  })
-}
-
-export function confirmPool() {
-  return apiRequest<ServerAuctionState>('/auction/confirm-pool', { method: 'POST' })
-}
-
 export function revealDraw() {
   return apiRequest<ServerAuctionState>('/auction/reveal-draw', { method: 'POST' })
+}
+
+export function hammerAuction() {
+  return apiRequest<ServerAuctionState>('/auction/hammer', { method: 'POST' })
 }
 
 export function confirmWinner() {
   return apiRequest<ServerAuctionState>('/auction/confirm-winner', { method: 'POST' })
 }
 
-export function submitBid(
+export function submitOpenBid(
   action: 'bid' | 'pass' | 'buyout',
-  opts?: { amount?: number; increment?: number; captainName?: string },
+  opts?: { amount?: number; captainName?: string },
 ) {
   return apiRequest<ServerAuctionState>('/auction/bid', {
     method: 'POST',

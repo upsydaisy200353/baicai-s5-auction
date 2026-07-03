@@ -1,54 +1,38 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchAccountsHint } from '../api/auth'
+import { fetchAccountsHint, type AccountsHint } from '../api/auth'
 import { useAuth } from '../stores/auth'
 
 const router = useRouter()
 const { login } = useAuth()
 
-const username = ref('admin')
-const password = ref('admin123')
 const loading = ref(false)
+const loadingAs = ref('')
 const error = ref('')
-const hint = ref('')
-
-const captains = [
-  { id: 'wuyanzu', label: '吴彦祖' },
-  { id: 'yazi', label: '亚子' },
-  { id: 'caps', label: 'caps' },
-  { id: 'baiweiyi', label: '白惟一' },
-  { id: 'mushroom', label: '🍄' },
-  { id: 'xxts', label: 'xxts' },
-  { id: 'yume', label: 'Yume' },
-  { id: 'pika', label: '皮卡' },
-]
+const accounts = ref<AccountsHint | null>(null)
 
 onMounted(async () => {
   try {
-    const h = await fetchAccountsHint()
-    hint.value = `管理员: ${h.admin.username} / ${h.admin.password} · 队长默认密码: ${h.captainDefaultPassword}`
+    accounts.value = await fetchAccountsHint()
   } catch {
-    hint.value = '请确保后端已启动 (端口 8000)'
+    error.value = '请确保后端已启动 (端口 8000)'
   }
 })
 
-async function onSubmit() {
+async function enterAs(username: string) {
   loading.value = true
+  loadingAs.value = username
   error.value = ''
   try {
-    await login(username.value.trim(), password.value)
+    await login(username)
     router.replace('/')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '登录失败'
+    error.value = e instanceof Error ? e.message : '进入失败'
   } finally {
     loading.value = false
+    loadingAs.value = ''
   }
-}
-
-function fillCaptain(u: string) {
-  username.value = u
-  password.value = 'captain123'
 }
 </script>
 
@@ -59,12 +43,12 @@ function fillCaptain(u: string) {
       <div class="hero-scrim" aria-hidden="true" />
       <div class="hero-content">
         <img src="/logo.svg" alt="" class="hero-logo" />
-        <p class="hero-eyebrow">BAICAI CUP · SEASON 5</p>
-        <h1 class="hero-title">白菜杯选人仪式</h1>
+        <p class="hero-eyebrow">BAICAI CUP · BIDKING MODE</p>
+        <h1 class="hero-title">公开叫价选人仪式</h1>
         <p class="hero-desc">
-          八支战队 · 五路位置池 · 现场拍卖
+          全员同时叫价 · 倒计时落槌 · 观战大屏
           <br />
-          见证下一支传奇阵容的诞生
+          选择身份即可进入，无需密码
         </p>
         <div class="hero-stats">
           <div class="stat">
@@ -85,44 +69,41 @@ function fillCaptain(u: string) {
 
     <div class="login-card card fade-in fade-in-delay-1">
       <h2 class="card-title">进入仪式现场</h2>
-      <p class="card-sub">管理员 / 队长登录</p>
+      <p class="card-sub">选择你的身份，一键进入</p>
 
-      <form class="form" @submit.prevent="onSubmit">
-        <label>
-          <span>用户名</span>
-          <input v-model="username" autocomplete="username" required placeholder="admin 或队长 ID" />
-        </label>
-        <label>
-          <span>密码</span>
-          <input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            required
-            placeholder="••••••••"
-          />
-        </label>
-        <p v-if="error" class="error">{{ error }}</p>
-        <button class="btn-primary submit" type="submit" :disabled="loading">
-          {{ loading ? '登录中…' : '进入现场' }}
+      <p v-if="error" class="error">{{ error }}</p>
+
+      <div v-if="accounts" class="pick-section">
+        <p class="pick-label">管理员</p>
+        <button
+          type="button"
+          class="role-btn admin-btn"
+          :disabled="loading"
+          @click="enterAs(accounts.admin.username)"
+        >
+          {{ loadingAs === accounts.admin.username ? '进入中…' : accounts.admin.displayName }}
         </button>
-      </form>
+      </div>
 
-      <div class="hints">
-        <p class="hint-text">{{ hint }}</p>
-        <p class="hint-label">队长快捷登录</p>
+      <div v-if="accounts" class="pick-section">
+        <p class="pick-label">队长</p>
         <div class="cap-btns">
           <button
-            v-for="c in captains"
-            :key="c.id"
+            v-for="c in accounts.captains"
+            :key="c.username"
             type="button"
             class="cap-btn"
-            @click="fillCaptain(c.id)"
+            :disabled="loading"
+            @click="enterAs(c.username)"
           >
-            {{ c.label }}
+            {{ loadingAs === c.username ? '…' : c.displayName }}
           </button>
         </div>
       </div>
+
+      <p v-else-if="!error" class="loading-hint">加载身份列表…</p>
+
+      <p class="foot-note">现场演示模式 · 免密登录</p>
     </div>
   </div>
 </template>
@@ -263,87 +244,90 @@ function fillCaptain(u: string) {
 .card-sub {
   color: var(--text-muted);
   font-size: 0.875rem;
-  margin-bottom: 1.5rem;
-}
-
-.form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin-bottom: 1rem;
-}
-
-.form input {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.65rem 0.85rem;
-  color: var(--text);
-  font-size: 0.9375rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.form input:focus {
-  outline: none;
-  border-color: rgba(74, 222, 128, 0.45);
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12);
-}
-
-.submit {
-  width: 100%;
-  padding: 0.7rem;
-  margin-top: 0.35rem;
-  font-size: 0.95rem;
+  margin-bottom: 1.25rem;
 }
 
 .error {
   color: var(--red);
   font-size: 0.8125rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
-.hints {
-  margin-top: 1.5rem;
-  padding-top: 1.15rem;
-  border-top: 1px solid var(--border);
+.pick-section {
+  margin-bottom: 1.25rem;
 }
 
-.hint-text {
+.pick-label {
   font-size: 0.72rem;
   color: var(--text-muted);
-  margin-bottom: 0.85rem;
-  line-height: 1.5;
-}
-
-.hint-label {
-  font-size: 0.72rem;
-  color: var(--text-muted);
+  letter-spacing: 0.06em;
   margin-bottom: 0.55rem;
-  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.role-btn {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.admin-btn {
+  background: linear-gradient(135deg, rgba(245, 197, 66, 0.2), rgba(245, 197, 66, 0.08));
+  border-color: rgba(245, 197, 66, 0.35);
+  color: var(--gold);
+}
+
+.admin-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(245, 197, 66, 0.3), rgba(245, 197, 66, 0.12));
+  box-shadow: 0 0 20px rgba(245, 197, 66, 0.15);
 }
 
 .cap-btns {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
 .cap-btn {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.65rem;
+  font-size: 0.8125rem;
+  padding: 0.45rem 0.85rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
-  color: var(--text-muted);
+  color: var(--text);
+  cursor: pointer;
   transition: all 0.18s ease;
 }
 
-.cap-btn:hover {
+.cap-btn:hover:not(:disabled) {
   border-color: rgba(74, 222, 128, 0.35);
   color: var(--cabbage);
   background: var(--cabbage-dim);
+}
+
+.role-btn:disabled,
+.cap-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.loading-hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.foot-note {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 @media (max-width: 900px) {

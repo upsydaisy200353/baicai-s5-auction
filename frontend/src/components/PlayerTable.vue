@@ -28,8 +28,6 @@ function captainPosLabel(letter: Captain['poolLetter']) {
           <th>序号</th>
           <th>ID</th>
           <th>位置</th>
-          <th>起拍价</th>
-          <th>一口价</th>
           <th>成交价</th>
           <th>得主</th>
         </tr>
@@ -62,8 +60,6 @@ function captainPosLabel(letter: Captain['poolLetter']) {
             <td>{{ row.data.serial }}</td>
             <td class="name">{{ row.data.name }}</td>
             <td><span class="badge badge-blue pos-badge" :style="{ '--pos-color': POSITION_COLORS[row.data.position] }">{{ posLabel(row.data.position) }}</span></td>
-            <td>{{ row.data.startPrice }}w</td>
-            <td>{{ row.data.buyoutPrice }}w</td>
             <td>{{ row.data.finalPrice != null ? row.data.finalPrice + 'w' : '—' }}</td>
             <td>{{ row.data.winner ?? '—' }}</td>
           </template>
@@ -79,8 +75,6 @@ function captainPosLabel(letter: Captain['poolLetter']) {
             <td><span class="badge badge-gold">队长</span></td>
             <td class="name captain-name">{{ row.data.name }}</td>
             <td><span class="badge badge-blue">{{ captainPosLabel(row.data.poolLetter) }}</span></td>
-            <td>{{ row.data.rating }}</td>
-            <td>—</td>
             <td>—</td>
             <td><span class="funds">{{ row.data.funds }}w</span></td>
           </template>

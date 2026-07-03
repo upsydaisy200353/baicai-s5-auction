@@ -1,11 +1,12 @@
-"""初始化用户账号"""
+"""初始化用户账号（免密登录，password_hash 仅占位）"""
 
 from auth import hash_password
 from db import clear_users, count_users, create_user, init_db, list_roster
 
+_PLACEHOLDER_HASH = hash_password("__passwordless__")
+
 ADMIN_USER = {
     "username": "admin",
-    "password": "admin123",
     "role": "admin",
     "displayName": "管理员",
 }
@@ -22,9 +23,6 @@ CAPTAIN_ACCOUNTS = [
     ("pika", "皮卡"),
 ]
 
-DEFAULT_CAPTAIN_PASSWORD = "captain123"
-
-
 def seed_users() -> None:
     init_db()
     if count_users() > 0:
@@ -32,7 +30,7 @@ def seed_users() -> None:
     create_user(
         {
             "username": ADMIN_USER["username"],
-            "passwordHash": hash_password(ADMIN_USER["password"]),
+            "passwordHash": _PLACEHOLDER_HASH,
             "role": "admin",
             "captainName": None,
             "displayName": ADMIN_USER["displayName"],
@@ -49,7 +47,7 @@ def seed_users() -> None:
         create_user(
             {
                 "username": username,
-                "passwordHash": hash_password(DEFAULT_CAPTAIN_PASSWORD),
+                "passwordHash": _PLACEHOLDER_HASH,
                 "role": "captain",
                 "captainName": captain_name,
                 "displayName": captain_name,

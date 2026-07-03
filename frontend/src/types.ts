@@ -6,8 +6,8 @@ export type PoolLetter = 'A' | 'B' | 'C' | 'D' | 'E'
 export interface Player {
   serial: string
   name: string
-  startPrice: number
-  buyoutPrice: number
+  startPrice?: number
+  buyoutPrice?: number
   position: Position
   avatar?: string | null
   sold: boolean
@@ -49,20 +49,52 @@ export type AuctionPhase =
   | 'idle'
   | 'intro'
   | 'pool_select'
-  | 'bid_order_select'
-  | 'pool_announce'
   | 'pool_draw'
-  | 'bidding'
+  | 'open_bid'
   | 'winner_reveal'
   | 'player_done'
   | 'finished'
 
 export type BidActionType = 'bid' | 'pass' | 'buyout'
 
-export interface BidAction {
+export interface LiveBidEntry {
+  id: number
   captain: string
-  action: BidActionType
-  increment?: number
+  amount: number
+  time: string
+}
+
+export interface CaptainBidRow {
+  name: string
+  funds: number
+  latestBid: number | null
+  isLeader: boolean
+  canBid: boolean
+  skipReason: string | null
+  passed: boolean
+}
+
+export interface OpenBidContext {
+  player: Player
+  eligibleCaptains: Captain[]
+  currentPrice: number
+  currentLeader: string | null
+  leaderCaptain: Captain | null
+  minNextBid: number
+  minIncrement: number
+  startPrice: number
+  buyoutPrice: number | null
+  deadlineMs: number
+  timeoutSeconds: number
+  secondsRemaining: number
+  liveBids: LiveBidEntry[]
+  captainRows: CaptainBidRow[]
+}
+
+export interface LastResult {
+  player: Player
+  winner: string | null
+  price: number | null
 }
 
 export interface LogEntry {
@@ -70,27 +102,6 @@ export interface LogEntry {
   time: string
   text: string
   type: 'info' | 'bid' | 'buyout' | 'win' | 'phase' | 'warn'
-}
-
-export interface BiddingContext {
-  player: Player
-  currentPrice: number
-  highestBidder: string | null
-  roundNum: number
-  lastIncrement: number
-  minNextBid: number
-  minRaise: number
-  isFirstRound: boolean
-  turnCaptain: Captain
-  order: Captain[]
-  passedCaptains: string[]
-}
-
-export interface LastResult {
-  player: Player
-  winner: string | null
-  price: number | null
-  buyout: boolean
 }
 
 export interface AuctionSnapshot {
@@ -101,8 +112,9 @@ export interface AuctionSnapshot {
   currentPoolIndex: number
   currentPool: Position | null
   currentPlayer: Player | null
-  bidding: BiddingContext | null
+  openBid: OpenBidContext | null
   logs: LogEntry[]
   drawCandidates: Player[]
   lastResult: LastResult | null
+  availablePools?: Position[]
 }

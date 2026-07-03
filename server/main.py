@@ -79,8 +79,8 @@ class PoolSelectPayload(BaseModel):
     pool: Literal["Top", "Jungle", "Mid", "Bot", "Support"]
 
 
-class SealedBidPayload(BaseModel):
-    action: Literal["bid", "pass"]
+class OpenBidPayload(BaseModel):
+    action: Literal["bid", "pass", "buyout"]
     amount: int | None = Field(default=None, ge=1)
     captainName: str | None = None
 
@@ -152,7 +152,7 @@ def enrich_auction_state(state: dict) -> dict:
         if name and name in cap_avatars:
             c["avatar"] = cap_avatars[name]
     _apply_avatar(state.get("currentPlayer"), avatars)
-    for ctx_key in ("sealedBid", "bidReveal", "playerReveal"):
+    for ctx_key in ("openBid", "playerReveal"):
         ctx = state.get(ctx_key)
         if ctx and ctx.get("player"):
             _apply_avatar(ctx["player"], avatars)
@@ -310,6 +310,12 @@ def auction_state(_user: dict = Depends(get_current_user)):
     return auction_state_response()
 
 
+@app.get("/api/auction/spectator")
+def auction_spectator():
+    """观战大屏只读状态，无需登录"""
+    return auction_state_response()
+
+
 @app.post("/api/auction/start")
 def auction_start(_user: dict = Depends(require_admin)):
     load_auction_from_db()
@@ -340,29 +346,9 @@ def auction_reveal_draw(_user: dict = Depends(require_admin)):
     return auction_state_response()
 
 
-@app.post("/api/auction/confirm-bid-reveal")
-def auction_confirm_bid_reveal(_user: dict = Depends(require_admin)):
-    auction.confirm_bid_reveal()
-    return auction_state_response()
-
-
-@app.post("/api/auction/advance-player-reveal")
-def auction_advance_player_reveal(_user: dict = Depends(require_admin)):
-    auction.advance_player_reveal()
-    return auction_state_response()
-
-
-@app.post("/api/auction/open-bids")
-def auction_open_bids(_user: dict = Depends(require_admin)):
-    err = auction.open_sealed_bids()
-    if err:
-        raise HTTPException(400, err)
-    return auction_state_response()
-
-
-@app.post("/api/auction/force-open-bids")
-def auction_force_open_bids(_user: dict = Depends(require_admin)):
-    err = auction.force_open_sealed_bids()
+@app.post("/api/auction/hammer")
+def auction_hammer(_user: dict = Depends(require_admin)):
+    err = auction.hammer()
     if err:
         raise HTTPException(400, err)
     return auction_state_response()
@@ -374,10 +360,10 @@ def auction_confirm_winner(_user: dict = Depends(require_admin)):
     return auction_state_response()
 
 
-@app.post("/api/auction/sealed-bid")
-def auction_sealed_bid(payload: SealedBidPayload, user: dict = Depends(require_captain_or_admin)):
-    if auction.phase != "sealed_bid":
-        raise HTTPException(400, "当前不在密封出价阶段")
+@app.post("/api/auction/bid")
+def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or_admin)):
+    if auction.phase != "open_bid":
+        raise HTTPException(400, "当前不在公开叫价阶段")
 
     if user["role"] == "admin":
         captain_name = payload.captainName
@@ -391,7 +377,7 @@ def auction_sealed_bid(payload: SealedBidPayload, user: dict = Depends(require_c
         if not captain_name:
             raise HTTPException(403, "非队长账号")
 
-    err = auction.submit_sealed_bid(
+    err = auction.submit_open_bid(
         captain_name,
         payload.action,
         amount=payload.amount,

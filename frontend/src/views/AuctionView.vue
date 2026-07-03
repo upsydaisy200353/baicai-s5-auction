@@ -1,128 +1,88 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   beginCeremony,
-  confirmBidPrep,
-  confirmPool,
   confirmWinner,
   fetchAuctionState,
-  revealDraw,
+  hammerAuction,
   resetAuction as apiResetAuction,
+  revealDraw,
   selectPool,
   startAuction,
-  submitBid,
+  submitOpenBid,
   type ServerAuctionState,
 } from '../api/auction'
-import { fetchRoster } from '../api/roster'
-import CaptainCards from '../components/CaptainCards.vue'
-import PlayerTable from '../components/PlayerTable.vue'
-import LogPanel from '../components/LogPanel.vue'
-import BidPanel from '../components/BidPanel.vue'
-import AuctionStage from '../components/AuctionStage.vue'
-import CeremonyTimeline from '../components/CeremonyTimeline.vue'
+import AdminCeremonyBar from '../components/AdminCeremonyBar.vue'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
-import PoolPickPanel from '../components/PoolPickPanel.vue'
-import BidOrderPanel from '../components/BidOrderPanel.vue'
-import { buildRosterRowsFromEntries, captainCanBidForPosition, captainSkipReason } from '../rosterUtils'
-import { POSITION_NAMES } from '../constants'
+import CeremonyTimeline from '../components/CeremonyTimeline.vue'
+import LogPanel from '../components/LogPanel.vue'
+import OpenBidPanel from '../components/OpenBidPanel.vue'
+import SpectatorBoard from '../components/SpectatorBoard.vue'
 import { useAuth } from '../stores/auth'
-import type { Position, RosterEntry, RosterRow } from '../types'
+import type { Position } from '../types'
 
 const { isAdmin, isCaptain, captainName, user } = useAuth()
 
 const state = ref<ServerAuctionState | null>(null)
-const entries = ref<RosterEntry[]>([])
 const loading = ref(true)
 const error = ref('')
 const actionMsg = ref('')
+const proxyCaptain = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-const overlayPhases = ['intro', 'pool_announce', 'pool_draw', 'winner_reveal', 'finished']
+const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 
-const activeCaptainName = computed(
-  () => state.value?.bidding?.turnCaptain.name ?? null,
-)
-
-const isMyTurn = computed(() => {
-  if (!state.value?.bidding) return false
-  if (isAdmin.value) return true
-  if (!isCaptain.value) return false
-  return state.value.bidding.turnCaptain.name === captainName.value
+const myCaptainRow = computed(() => {
+  if (!state.value?.openBid || !captainName.value) return null
+  return state.value.openBid.captainRows.find((r) => r.name === captainName.value) ?? null
 })
 
-const isProxyBid = computed(() => isAdmin.value && !!state.value?.bidding)
-
-const proxyCaptainName = computed(
-  () => state.value?.bidding?.turnCaptain.name,
-)
-
-const bidContextPosition = computed((): Position | null => {
-  if (state.value?.bidding?.player.position) return state.value.bidding.player.position
-  if (state.value?.currentPlayer?.position) return state.value.currentPlayer.position
-  if (state.value?.currentPool) return state.value.currentPool
-  return null
-})
-
-const ineligibleCaptainNames = computed((): string[] => {
-  if (!state.value || !bidContextPosition.value) return []
-  const pos = bidContextPosition.value
-  return state.value.captains
-    .filter((c) => !captainCanBidForPosition(c, pos, state.value!.players))
-    .map((c) => c.name)
-})
-
-const ineligibleReasons = computed((): Record<string, string> => {
-  const map: Record<string, string> = {}
-  if (!state.value || !bidContextPosition.value) return map
-  const pos = bidContextPosition.value
-  for (const c of state.value.captains) {
-    const reason = captainSkipReason(c, pos, state.value.players)
-    if (reason) map[c.name] = reason
+const canSubmitBid = computed(() => {
+  if (!state.value?.openBid || state.value.phase !== 'open_bid') return false
+  if (isAdmin.value) {
+    const name = proxyCaptain.value
+    if (!name) return false
+    const row = state.value.openBid.captainRows.find((r) => r.name === name)
+    return !!row?.canBid && !row.passed
   }
-  return map
+  if (!isCaptain.value || !captainName.value) return false
+  const row = myCaptainRow.value
+  return !!row?.canBid && !row.passed
 })
 
-const currentPoolLabel = computed(() => {
-  if (!state.value?.currentPool) return ''
-  const idx = state.value.currentPoolIndex + 1
-  const total = state.value.poolOrder.length || 5
-  return `${POSITION_NAMES[state.value.currentPool]} · 第 ${idx}/${total} 池`
+const hasPassed = computed(() => {
+  if (isAdmin.value && proxyCaptain.value) {
+    const row = state.value?.openBid?.captainRows.find((r) => r.name === proxyCaptain.value)
+    return !!row?.passed
+  }
+  return !!myCaptainRow.value?.passed
 })
 
-const rosterRows = computed((): RosterRow[] => {
-  if (!state.value) return buildRosterRowsFromEntries(entries.value)
-  const playerMap = new Map(state.value.players.map((p) => [p.serial, p]))
-  const captainMap = new Map(state.value.captains.map((c) => [c.name, c]))
-  return buildRosterRowsFromEntries(entries.value).map((row) => {
-    if (row.kind === 'player') {
-      const live = playerMap.get(row.data.serial)
-      const entry = entries.value.find((e) => e.serial === row.data.serial)
-      const avatar = live?.avatar ?? entry?.avatar ?? row.data.avatar
-      return live
-        ? { kind: 'player' as const, data: { ...live, avatar } }
-        : avatar
-          ? { kind: 'player' as const, data: { ...row.data, avatar } }
-          : row
+const canHammer = computed(
+  () =>
+    isAdmin.value &&
+    state.value?.phase === 'open_bid' &&
+    !!state.value.openBid?.currentLeader &&
+    (state.value.openBid?.currentPrice ?? 0) > 0,
+)
+
+watch(
+  () => state.value?.openBid,
+  () => {
+    if (!state.value?.openBid) return
+    const eligible = state.value.openBid.captainRows.filter((r) => r.canBid && !r.passed)
+    if (isAdmin.value && eligible.length) {
+      if (!proxyCaptain.value || !eligible.some((r) => r.name === proxyCaptain.value)) {
+        proxyCaptain.value = eligible[0]!.name
+      }
     }
-    const live = captainMap.get(row.data.name)
-    const entry = entries.value.find((e) => e.identity === 'captain' && e.name === row.data.name)
-    const avatar = live?.avatar ?? entry?.avatar ?? row.data.avatar
-    return live
-      ? { kind: 'captain' as const, data: { ...live, poolLetter: row.data.poolLetter, avatar } }
-      : avatar
-        ? { kind: 'captain' as const, data: { ...row.data, avatar } }
-        : row
-  })
-})
+  },
+  { deep: true },
+)
 
 async function refresh() {
   try {
-    const [auctionState, roster] = await Promise.all([
-      fetchAuctionState(),
-      fetchRoster(),
-    ])
-    state.value = auctionState
-    entries.value = roster.entries
+    state.value = await fetchAuctionState()
     error.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : '同步失败'
@@ -143,7 +103,7 @@ async function runAction(fn: () => Promise<ServerAuctionState>, label?: string) 
 
 onMounted(async () => {
   await refresh()
-  pollTimer = setInterval(refresh, 1500)
+  pollTimer = setInterval(refresh, 1200)
 })
 
 onUnmounted(() => {
@@ -162,14 +122,6 @@ async function onSelectPool(pool: Position) {
   await runAction(() => selectPool(pool))
 }
 
-async function onConfirmBidPrep(names: string[]) {
-  await runAction(() => confirmBidPrep(names), '开始抽签')
-}
-
-async function onConfirmPool() {
-  await runAction(confirmPool)
-}
-
 async function onRevealDraw() {
   await runAction(revealDraw)
 }
@@ -178,37 +130,39 @@ async function onConfirmWinner() {
   await runAction(confirmWinner)
 }
 
+async function onHammer() {
+  await runAction(hammerAuction, '已落槌')
+}
+
 async function onReset() {
   await runAction(apiResetAuction, '已重置')
 }
 
 async function onBid(amount: number) {
   await runAction(() =>
-    submitBid('bid', {
+    submitOpenBid('bid', {
       amount,
-      captainName: isAdmin.value ? proxyCaptainName.value : undefined,
+      captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
     }),
-  )
-}
-
-async function onBidIncrement(increment: number) {
-  await runAction(() =>
-    submitBid('bid', {
-      increment,
-      captainName: isAdmin.value ? proxyCaptainName.value : undefined,
-    }),
-  )
-}
-
-async function onBuyout() {
-  await runAction(() =>
-    submitBid('buyout', { captainName: isAdmin.value ? proxyCaptainName.value : undefined }),
   )
 }
 
 async function onPass() {
   await runAction(() =>
-    submitBid('pass', { captainName: isAdmin.value ? proxyCaptainName.value : undefined }),
+    submitOpenBid('pass', {
+      captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
+    }),
+  )
+}
+
+async function onBuyout() {
+  const buyout = state.value?.openBid?.buyoutPrice
+  if (!buyout) return
+  await runAction(() =>
+    submitOpenBid('buyout', {
+      amount: buyout,
+      captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
+    }),
   )
 }
 </script>
@@ -230,118 +184,94 @@ async function onPass() {
         :last-result="state.lastResult"
         :is-admin="isAdmin"
         @begin="onBegin"
-        @confirm-pool="onConfirmPool"
         @reveal-draw="onRevealDraw"
         @confirm-winner="onConfirmWinner"
       />
 
-      <header class="header card fade-in">
-        <div class="header-left">
-          <img src="/logo.svg" alt="" class="header-logo" />
+      <!-- 待开始 -->
+      <template v-if="state.phase === 'idle'">
+        <header class="idle-header card">
+          <img src="/logo.svg" alt="" class="idle-logo" />
           <div>
-            <p class="header-eyebrow">BAICAI CUP · SEASON 5</p>
-            <h1 class="title">选人仪式现场</h1>
-            <p class="subtitle">
-              <span class="user-pill">
-                <span class="user-dot" />
-                {{ user?.displayName }}
-              </span>
+            <p class="idle-eyebrow">BAICAI CUP · LIVE AUCTION</p>
+            <h1 class="idle-title">公开叫价选人现场</h1>
+            <p class="idle-sub">
+              <span class="user-pill">{{ user?.displayName }}</span>
               <span class="role-tag">{{ isAdmin ? '管理员' : '队长' }}</span>
-              <span v-if="isAdmin" class="sim-tag">可代队长操作</span>
             </p>
           </div>
-        </div>
-        <div class="header-actions">
-          <template v-if="isAdmin">
-            <button
-              class="btn-primary"
-              :disabled="state.phase !== 'idle' && state.phase !== 'finished'"
-              @click="onStart"
-            >
-              开始仪式
-            </button>
-            <button class="btn-ghost" @click="onReset">重置</button>
-          </template>
-          <button class="btn-ghost" @click="refresh">刷新</button>
-        </div>
-      </header>
+          <div class="idle-actions">
+            <template v-if="isAdmin">
+              <button class="btn-primary btn-start" @click="onStart">开始仪式</button>
+              <router-link to="/admin" class="btn-ghost">名单管理</router-link>
+            </template>
+            <router-link to="/spectator" class="btn-ghost">观战大屏 ↗</router-link>
+          </div>
+        </header>
+        <p class="idle-hint">全员同时叫价 · 倒计时落槌 · 最高价者得</p>
+      </template>
 
-      <CeremonyTimeline :phase="state.phase" />
+      <!-- 仪式进行中：观战大屏 -->
+      <template v-else>
+        <CeremonyTimeline :phase="state.phase" />
 
-      <PoolPickPanel
-        v-if="state.phase === 'pool_select' && isAdmin"
-        :available-pools="state.availablePools"
-        :pool-order="state.poolOrder"
-        @select="onSelectPool"
-      />
+        <AdminCeremonyBar
+          v-if="isAdmin && !overlayPhases.includes(state.phase)"
+          :phase="state.phase"
+          :available-pools="state.availablePools"
+          :pool-order="state.poolOrder"
+          :can-hammer="canHammer"
+          @select-pool="onSelectPool"
+          @hammer="onHammer"
+          @reset="onReset"
+        />
 
-      <div v-else-if="state.phase === 'pool_select'" class="banner info">
-        等待管理员选择下一个位置池…
-      </div>
+        <SpectatorBoard
+          :phase="state.phase"
+          :captains="state.captains"
+          :current-pool="state.currentPool"
+          :current-player="state.currentPlayer"
+          :open-bid="state.openBid"
+          :pool-order="state.poolOrder"
+        />
 
-      <BidOrderPanel
-        v-else-if="state.phase === 'bid_order_select' && isAdmin"
-        :captains="state.captains"
-        :saved-order="state.bidOrder"
-        :pool-label="currentPoolLabel"
-        confirm-label="确认顺序并开始抽签"
-        @confirm="onConfirmBidPrep"
-      />
-
-      <div v-else-if="state.phase === 'bid_order_select'" class="banner info">
-        等待管理员设定【{{ state.currentPool ? POSITION_NAMES[state.currentPool] : '' }}】池出价顺序…
-      </div>
-
-      <div class="main-grid">
-        <div class="left-col">
-          <AuctionStage
-            :phase="state.phase"
-            :current-player="state.currentPlayer"
-            :current-pool="state.currentPool"
-            :pool-order="state.poolOrder"
-          />
-
-          <BidPanel
-            v-if="state.phase === 'bidding'"
-            :bidding="state.bidding"
-            :can-bid="isMyTurn"
-            :proxy-mode="isProxyBid"
-            :waiting-label="
-              !isMyTurn && state.bidding && !isAdmin
-                ? `等待 ${state.bidding.turnCaptain.name} 出价…`
-                : undefined
-            "
-            @bid="onBid"
-            @bid-increment="onBidIncrement"
-            @buyout="onBuyout"
-            @pass="onPass"
-          />
-
-          <section class="section">
-            <h3 class="section-title">队长</h3>
-            <CaptainCards
-              :captains="state.captains"
-              :active-name="activeCaptainName"
-              :current-position="bidContextPosition"
-              :players="state.players"
-              :ineligible-names="ineligibleCaptainNames"
-              :ineligible-reasons="ineligibleReasons"
-            />
-          </section>
+        <div v-if="isAdmin && state.phase === 'open_bid'" class="proxy-row card">
+          <label class="proxy-label">
+            代出价队长
+            <select v-model="proxyCaptain" class="proxy-select">
+              <option
+                v-for="row in state.openBid?.captainRows.filter((r) => r.canBid || r.passed)"
+                :key="row.name"
+                :value="row.name"
+              >
+                {{ row.name }}{{ row.passed ? '（已放弃）' : '' }}
+              </option>
+            </select>
+          </label>
         </div>
 
-        <div class="right-col">
+        <OpenBidPanel
+          v-if="state.phase === 'open_bid' && state.openBid && (canSubmitBid || hasPassed)"
+          :open-bid="state.openBid"
+          :can-submit="canSubmitBid"
+          :has-passed="hasPassed"
+          :proxy-mode="isAdmin"
+          :proxy-captain-name="proxyCaptain"
+          :is-admin="isAdmin"
+          @bid="onBid"
+          @pass="onPass"
+          @buyout="onBuyout"
+        />
+
+        <div v-else-if="state.phase === 'open_bid' && isCaptain && !canSubmitBid" class="banner info">
+          {{ myCaptainRow?.skipReason ?? '当前无法参与本场竞拍' }}
+        </div>
+
+        <details v-if="isAdmin" class="admin-log card">
+          <summary>操作日志</summary>
           <LogPanel :logs="state.logs" />
-          <section class="section">
-            <h3 class="section-title">选手名单</h3>
-            <PlayerTable
-              :rows="rosterRows"
-              :current-pool="state.currentPool"
-              :highlight-serial="state.currentPlayer?.serial ?? state.lastResult?.player.serial ?? null"
-            />
-          </section>
-        </div>
-      </div>
+        </details>
+      </template>
     </template>
   </div>
 </template>
@@ -357,7 +287,6 @@ async function onPass() {
   margin-bottom: 1rem;
   font-size: 0.875rem;
   border: 1px solid transparent;
-  animation: fadeUp 0.35s ease;
 }
 
 .banner.info {
@@ -369,84 +298,52 @@ async function onPass() {
 .banner.error {
   background: var(--red-dim);
   color: var(--red);
-  border-color: rgba(248, 113, 113, 0.25);
 }
 
 .banner.warn {
   background: var(--gold-dim);
   color: var(--gold);
-  border-color: rgba(245, 197, 66, 0.25);
 }
 
-.header {
+.idle-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1.25rem;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
   flex-wrap: wrap;
-  padding: 1rem 1.25rem;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+.idle-logo {
+  width: 56px;
+  height: 56px;
 }
 
-.header-logo {
-  width: 52px;
-  height: 52px;
-  filter: drop-shadow(0 0 12px rgba(74, 222, 128, 0.35));
-  flex-shrink: 0;
-}
-
-.header-eyebrow {
+.idle-eyebrow {
   font-family: var(--font-display);
   font-size: 0.65rem;
-  letter-spacing: 0.16em;
-  color: var(--cabbage);
-  margin-bottom: 0.15rem;
+  letter-spacing: 0.14em;
+  color: var(--purple);
 }
 
-.title {
+.idle-title {
   font-family: var(--font-display);
   font-size: 1.65rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #fff 20%, var(--gold-bright) 60%, var(--cabbage));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  line-height: 1.2;
 }
 
-.subtitle {
+.idle-sub {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
   gap: 0.4rem;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
   margin-top: 0.35rem;
+  font-size: 0.8125rem;
 }
 
 .user-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.user-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--cabbage);
-  box-shadow: 0 0 6px var(--cabbage);
 }
 
 .role-tag {
@@ -458,64 +355,54 @@ async function onPass() {
   font-weight: 600;
 }
 
-.sim-tag {
-  padding: 0.12rem 0.5rem;
-  border-radius: 999px;
-  background: var(--gold-dim);
-  color: var(--gold);
-  font-size: 0.7rem;
-  font-weight: 600;
-}
-
-.header-actions {
+.idle-actions {
+  margin-left: auto;
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.pool-select {
-  margin-bottom: 1rem;
+.btn-start {
+  padding: 0.65rem 1.5rem;
+  font-size: 1rem;
 }
 
-.setup-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-@media (max-width: 960px) {
-  .setup-section {
-    grid-template-columns: 1fr;
-  }
-}
-
-.main-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-@media (max-width: 960px) {
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.left-col,
-.right-col {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.section-title {
-  font-family: var(--font-display);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.idle-hint {
+  text-align: center;
   color: var(--text-muted);
-  margin-bottom: 0.65rem;
+  font-size: 0.875rem;
+}
+
+.proxy-row {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.proxy-label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.proxy-select {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+}
+
+.admin-log {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.admin-log summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
 }
 </style>

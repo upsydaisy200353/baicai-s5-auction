@@ -1,20 +1,31 @@
-"""服务端拍卖引擎（多人同步）"""
+"""服务端拍卖引擎 — 公开同时叫价 + 倒计时落槌"""
 
 from __future__ import annotations
 
 import copy
 import random
+import time
 from datetime import datetime
 from typing import Any
 
 from constants import POOL_LETTERS, POSITION_NAMES, POSITIONS
 
-MIN_INCREMENT = 10
-MAX_INCREMENT = 100
+MIN_BID = 10
+BID_TIMEOUT_SECONDS = 30
 
 
 def _now_time() -> str:
     return datetime.now().strftime("%H:%M:%S")
+
+
+def _min_increment(price: int) -> int:
+    if price < 100:
+        return 10
+    if price < 500:
+        return 10
+    if price < 1000:
+        return 50
+    return 100
 
 
 class AuctionEngine:
@@ -34,18 +45,15 @@ class AuctionEngine:
         self.last_result: dict | None = None
         self.logs: list[dict] = []
         self._log_id = 0
-        self.round_num = 0
-        self.current_price = 0
-        self.highest_bidder: dict | None = None
-        self.last_increment = MIN_INCREMENT
-        self.turn_index = 0
-        self.order: list[dict] = []
-        self.raised_this_round = False
-        self.last_buyout = False
-        self.bidding: dict | None = None
         self.remaining_pools: list[str] = []
         self.pending_pick: dict | None = None
-        self.bid_order_names: list[str] = []
+        # 公开叫价
+        self.current_price = 0
+        self.current_leader: str | None = None
+        self.live_bids: list[dict] = []
+        self.captain_bids: dict[str, int | None] = {}
+        self.bid_deadline_ms = 0
+        self._bid_seq = 0
         self.passed_captains: set[str] = set()
 
     def load_roster(self, players: list[dict], captains: list[dict]) -> None:
@@ -60,9 +68,6 @@ class AuctionEngine:
         self.logs.append(
             {"id": self._log_id, "time": _now_time(), "text": text, "type": log_type}
         )
-
-    def active_captains(self) -> list[dict]:
-        return [c for c in self.captains if c["funds"] > 0]
 
     def _captain_own_position(self, cap: dict) -> str | None:
         letter = cap.get("poolLetter")
@@ -84,11 +89,15 @@ class AuctionEngine:
     def captain_can_bid(self, cap: dict, position: str) -> bool:
         if cap["funds"] <= 0:
             return False
+        if cap["name"] in self.passed_captains:
+            return False
         if position in self._captain_positions(cap):
             return False
         return True
 
     def captain_skip_reason(self, cap: dict, position: str) -> str | None:
+        if cap["name"] in self.passed_captains:
+            return "本轮已放弃"
         if cap["funds"] <= 0:
             return "资金不足"
         own = self._captain_own_position(cap)
@@ -100,79 +109,6 @@ class AuctionEngine:
 
     def eligible_captains(self, position: str) -> list[dict]:
         return [c for c in self.captains if self.captain_can_bid(c, position)]
-
-    def _active_bidders(self, position: str) -> list[dict]:
-        return [
-            c
-            for c in self.eligible_captains(position)
-            if c["name"] not in self.passed_captains
-        ]
-
-    def _min_raise(self) -> int:
-        if self.round_num <= 1:
-            return MIN_INCREMENT
-        return max(MIN_INCREMENT, self.last_increment)
-
-    def _min_next_bid(self) -> int:
-        if not self.current_player:
-            return 0
-        if self.highest_bidder is None:
-            return self.current_player["startPrice"]
-        raw = self.current_price + self._min_raise()
-        return self._ceil_to_10(raw)
-
-    @staticmethod
-    def _ceil_to_10(value: int) -> int:
-        return ((value + 9) // 10) * 10
-
-    def _validate_bid_amount(self, cap: dict, amount: int) -> str | None:
-        if not self.current_player:
-            return "当前无拍卖选手"
-        if amount % 10 != 0:
-            return "出价须为 10 的倍数"
-        buyout = self.current_player["buyoutPrice"]
-        if amount > buyout:
-            return f"出价不能超过一口价 {buyout}w"
-        if amount > cap["funds"]:
-            return "出价超出剩余资金"
-        start = self.current_player["startPrice"]
-        if self.highest_bidder is None:
-            if amount < start:
-                return f"出价不能低于起拍价 {start}w"
-            return None
-        if amount <= self.current_price:
-            return f"必须高于当前价 {self.current_price}w"
-        min_bid = self._min_next_bid()
-        if amount < min_bid:
-            return f"最低出价 {min_bid}w（加价不少于 {self._min_raise()}w）"
-        return None
-
-    def _maybe_hammer(self) -> bool:
-        """落槌：其余竞拍者均已放弃时，最高价者胜出"""
-        if not self.current_player or not self.highest_bidder:
-            return False
-        position = self.current_player["position"]
-        others = [
-            c
-            for c in self._active_bidders(position)
-            if c["name"] != self.highest_bidder["name"]
-        ]
-        if not others:
-            self.add_log("其余竞拍者均已放弃，落槌成交", "phase")
-            self._complete_sale(self.highest_bidder, self.current_price, False)
-            return True
-        return False
-
-    def _default_bid_order_names(self) -> list[str]:
-        return [c["name"] for c in sorted(self.captains, key=lambda c: c["rating"], reverse=True)]
-
-    def _sort_bid_order(self, eligible: list[dict], round_num: int) -> list[dict]:
-        if self.bid_order_names:
-            rank = {name: i for i, name in enumerate(self.bid_order_names)}
-            return sorted(eligible, key=lambda c: rank.get(c["name"], 999))
-        if round_num == 1:
-            return sorted(eligible, key=lambda c: c["rating"], reverse=True)
-        return sorted(eligible, key=lambda c: c["funds"])
 
     def available_players(self, position: str) -> list[dict]:
         return [
@@ -189,7 +125,112 @@ class AuctionEngine:
             return []
         return list(self.remaining_pools)
 
+    def _player_start_price(self) -> int:
+        if not self.current_player:
+            return MIN_BID
+        return max(MIN_BID, int(self.current_player.get("startPrice") or MIN_BID))
+
+    def _player_buyout_price(self) -> int | None:
+        if not self.current_player:
+            return None
+        buyout = self.current_player.get("buyoutPrice")
+        return int(buyout) if buyout else None
+
+    def _min_next_bid(self) -> int:
+        start = self._player_start_price()
+        if self.current_price <= 0:
+            return start
+        return self.current_price + _min_increment(self.current_price)
+
+    def _reset_bid_timer(self) -> None:
+        self.bid_deadline_ms = int(time.time() * 1000) + BID_TIMEOUT_SECONDS * 1000
+
+    def _seconds_remaining(self) -> float:
+        return max(0.0, (self.bid_deadline_ms - int(time.time() * 1000)) / 1000.0)
+
+    def _reset_open_bid_state(self) -> None:
+        self.current_price = 0
+        self.current_leader = None
+        self.live_bids = []
+        self.captain_bids = {}
+        self.passed_captains = set()
+        self._bid_seq = 0
+        self._reset_bid_timer()
+
+    def _record_bid(self, captain_name: str, amount: int) -> None:
+        self._bid_seq += 1
+        entry = {
+            "id": self._bid_seq,
+            "captain": captain_name,
+            "amount": amount,
+            "time": _now_time(),
+        }
+        self.live_bids.insert(0, entry)
+        self.live_bids = self.live_bids[:40]
+        self.captain_bids[captain_name] = amount
+        self.current_price = amount
+        self.current_leader = captain_name
+        self._reset_bid_timer()
+
+    def _build_open_bid_context(self) -> dict | None:
+        if self.phase != "open_bid" or not self.current_player:
+            return None
+        position = self.current_player["position"]
+        eligible = self.eligible_captains(position)
+        leader = None
+        if self.current_leader:
+            leader = next(
+                (c for c in self.captains if c["name"] == self.current_leader), None
+            )
+        captain_rows = []
+        for cap in self.captains:
+            captain_rows.append(
+                {
+                    "name": cap["name"],
+                    "funds": cap["funds"],
+                    "latestBid": self.captain_bids.get(cap["name"]),
+                    "isLeader": cap["name"] == self.current_leader,
+                    "canBid": self.captain_can_bid(cap, position),
+                    "skipReason": self.captain_skip_reason(cap, position),
+                    "passed": cap["name"] in self.passed_captains,
+                }
+            )
+        return {
+            "player": copy.deepcopy(self.current_player),
+            "eligibleCaptains": [copy.deepcopy(c) for c in eligible],
+            "currentPrice": self.current_price,
+            "currentLeader": self.current_leader,
+            "leaderCaptain": copy.deepcopy(leader) if leader else None,
+            "minNextBid": self._min_next_bid(),
+            "minIncrement": _min_increment(max(self.current_price, self._player_start_price())),
+            "startPrice": self._player_start_price(),
+            "buyoutPrice": self._player_buyout_price(),
+            "deadlineMs": self.bid_deadline_ms,
+            "timeoutSeconds": BID_TIMEOUT_SECONDS,
+            "secondsRemaining": round(self._seconds_remaining(), 1),
+            "liveBids": copy.deepcopy(self.live_bids),
+            "captainRows": captain_rows,
+        }
+
+    def _maybe_hammer(self) -> None:
+        if self.phase != "open_bid" or not self.current_player:
+            return
+        if self._seconds_remaining() > 0:
+            return
+        if self.current_leader and self.current_price > 0:
+            cap = next(c for c in self.captains if c["name"] == self.current_leader)
+            self.add_log(
+                f"倒计时结束 — {self.current_leader} 以 {self.current_price}w 拍得",
+                "phase",
+            )
+            self._complete_sale(cap, self.current_price)
+            return
+        self.add_log("倒计时结束 — 无人出价，流拍", "warn")
+        player = self.current_player
+        self._show_winner_reveal(player, None, None)
+
     def to_state(self) -> dict[str, Any]:
+        self._maybe_hammer()
         return {
             "phase": self.phase,
             "captains": copy.deepcopy(self.captains),
@@ -198,12 +239,11 @@ class AuctionEngine:
             "currentPoolIndex": self.current_pool_index,
             "currentPool": self.current_pool,
             "currentPlayer": copy.deepcopy(self.current_player),
-            "bidding": copy.deepcopy(self.bidding),
+            "openBid": self._build_open_bid_context(),
             "logs": list(self.logs),
             "drawCandidates": copy.deepcopy(self.draw_candidates),
             "lastResult": copy.deepcopy(self.last_result),
             "availablePools": self.available_pools,
-            "bidOrder": list(self.bid_order_names),
         }
 
     def start(self) -> None:
@@ -213,11 +253,11 @@ class AuctionEngine:
         self.players = players
         self.captains = captains
         self.captain_names = captain_names
-        self.bid_order_names = []
         self.phase = "intro"
-        self.add_log("白菜杯选人仪式开始", "phase")
-        self.add_log("8 位队长将通过拍卖竞价组建战队", "info")
-        self.add_log("规则：每队每个位置仅可签下一名选手（含队长本人位置）", "info")
+        self.add_log("公开叫价选人仪式开始", "phase")
+        self.add_log("全员可同时加价，倒计时内无人继续加价则由最高价者拍得", "info")
+        self.add_log(f"每次加价后重置 {BID_TIMEOUT_SECONDS}s 倒计时", "info")
+        self.add_log("每队每个位置仅可签下一名选手（含队长本人位置）", "info")
 
     def begin_pool_select(self) -> None:
         if self.phase != "intro":
@@ -250,9 +290,8 @@ class AuctionEngine:
         has_players = bool(self.available_players(pool))
         has_bidders = bool(self.eligible_captains(pool))
         if has_players and has_bidders:
-            self.bid_order_names = []
-            self.phase = "bid_order_select"
-            self.add_log(f"请设定【{POSITION_NAMES[pool]}】池队长出价顺序", "phase")
+            self.add_log(f"【{POSITION_NAMES[pool]}】池 — 抽取拍卖标的", "phase")
+            self._start_draw()
             return None
 
         if not has_players:
@@ -268,7 +307,6 @@ class AuctionEngine:
     def _end_current_pool(self) -> None:
         finished = self.current_pool
         self.current_pool = None
-        self.bid_order_names = []
         if not self.remaining_pools:
             self.phase = "finished"
             self.add_log("选人仪式圆满结束", "phase")
@@ -282,37 +320,6 @@ class AuctionEngine:
             )
         else:
             self.add_log(f"请选择下一个位置池（剩余：{remaining}）", "phase")
-
-    def set_bid_order(self, names: list[str]) -> str | None:
-        if self.phase != "bid_order_select":
-            return "当前不能设定出价顺序"
-        return self._apply_bid_order(names)
-
-    def _apply_bid_order(self, names: list[str]) -> str | None:
-        cap_names = {c["name"] for c in self.captains}
-        if set(names) != cap_names:
-            return "须包含全部队长且不能遗漏"
-        if len(names) != len(set(names)):
-            return "队长不能重复"
-        self.bid_order_names = list(names)
-        return None
-
-    def confirm_bid_prep(self, names: list[str]) -> str | None:
-        if self.phase != "bid_order_select":
-            return "请先选择位置池并设定出价顺序"
-        err = self._apply_bid_order(names)
-        if err:
-            return err
-        pool = self.current_pool
-        self.add_log(f"队长出价顺序：{' → '.join(names)}", "phase")
-        if pool:
-            self.add_log(f"【{POSITION_NAMES[pool]}】池开始抽签", "phase")
-        self._start_draw()
-        return None
-
-    def confirm_pool_enter(self) -> None:
-        if self.phase == "pool_announce":
-            self._start_draw()
 
     def _start_draw(self) -> None:
         if not self.current_pool:
@@ -332,217 +339,119 @@ class AuctionEngine:
         self.draw_candidates = copy.deepcopy(pool)
         self.current_player = None
         self.phase = "pool_draw"
-        self.add_log(f"随机抽取 — {POSITION_NAMES[self.current_pool]} 池", "info")
+        self.add_log(
+            f"标的抽取 — {POSITION_NAMES[self.current_pool]} 池 · {len(pool)} 名候选",
+            "info",
+        )
 
     def reveal_draw(self) -> None:
         if self.phase != "pool_draw" or not self.pending_pick:
             return
         self.current_player = self.pending_pick
+        self.pending_pick = None
+        self.phase = "open_bid"
+        self._reset_open_bid_state()
+        pos = POSITION_NAMES[self.current_player["position"]]
+        start = self._player_start_price()
+        buyout = self._player_buyout_price()
         self.add_log(
-            f"揭晓：{self.current_player['serial']} {self.current_player['name']}",
+            f"公开竞拍 — {self.current_player['serial']} {self.current_player['name']} · {pos}",
             "phase",
         )
-        self.pending_pick = None
-        self._begin_bidding()
+        self.add_log(f"起拍 {start}w" + (f" · 一口价 {buyout}w" if buyout else ""), "info")
 
-    def _begin_bidding(self) -> None:
-        if not self.current_player:
-            return
-        position = self.current_player["position"]
-        if not self.eligible_captains(position):
-            self.add_log(
-                f"所有队长已拥有【{POSITION_NAMES[position]}】选手，{self.current_player['name']} 流拍",
-                "warn",
-            )
-            self._show_winner_reveal(self.current_player, None, None)
-            return
-        self.phase = "bidding"
-        self.round_num = 0
-        self.current_price = self.current_player["startPrice"]
-        self.highest_bidder = None
-        self.last_increment = MIN_INCREMENT
-        self.passed_captains = set()
-        self.add_log(f"拍卖开始 — {self.current_player['name']}", "phase")
-        self.add_log(
-            f"起拍价 {self.current_player['startPrice']}w · 一口价 {self.current_player['buyoutPrice']}w · 加价须为 10 的倍数",
-            "info",
-        )
-        self._start_new_round()
-
-    def _start_new_round(self) -> None:
-        if not self.current_player:
-            return
-        self.round_num += 1
-        self.raised_this_round = False
-        self.turn_index = 0
-        position = self.current_player["position"]
-        eligible = [
-            c for c in self.eligible_captains(position) if c["name"] not in self.passed_captains
-        ]
-        self.order = self._sort_bid_order(eligible, self.round_num)
-        if not self.order:
-            self._finish_player_auction()
-            return
-        order_text = " → ".join(c["name"] for c in self.order)
-        if self.bid_order_names:
-            self.add_log(f"第 {self.round_num} 轮（管理员设定顺序）：{order_text}", "info")
-        elif self.round_num == 1:
-            self.add_log(f"第 1 轮（实力强→弱）：{order_text}", "info")
-        else:
-            self.add_log(f"第 {self.round_num} 轮（资金少→多）：{order_text}", "info")
-        self._advance_turn()
-
-    def _advance_turn(self) -> None:
-        if not self.current_player or self.phase != "bidding":
-            return
-        while self.turn_index < len(self.order):
-            cap = self.order[self.turn_index]
-            self.turn_index += 1
-            if cap["name"] in self.passed_captains:
-                continue
-            if self.highest_bidder and cap["name"] == self.highest_bidder["name"]:
-                continue
-            min_bid = self._min_next_bid()
-            if cap["funds"] < min_bid:
-                self.add_log(f"[{cap['name']}] 资金不足最低出价 {min_bid}w，跳过", "warn")
-                continue
-            self.bidding = {
-                "player": copy.deepcopy(self.current_player),
-                "currentPrice": self.current_price,
-                "highestBidder": self.highest_bidder["name"] if self.highest_bidder else None,
-                "roundNum": self.round_num,
-                "lastIncrement": self.last_increment,
-                "minNextBid": min_bid,
-                "minRaise": self._min_raise(),
-                "isFirstRound": self.round_num == 1,
-                "turnCaptain": copy.deepcopy(cap),
-                "order": copy.deepcopy(self.order),
-                "passedCaptains": sorted(self.passed_captains),
-            }
-            return
-        if not self.raised_this_round:
-            self._finish_player_auction()
-        else:
-            self._start_new_round()
-
-    def submit_bid(
+    def submit_open_bid(
         self,
         captain_name: str,
         action: str,
         amount: int | None = None,
-        increment: int | None = None,
     ) -> str | None:
-        if self.phase != "bidding" or not self.bidding or not self.current_player:
-            return "当前不在竞价阶段"
-        if self.bidding["turnCaptain"]["name"] != captain_name:
-            return "还没轮到你出价"
+        if self.phase != "open_bid" or not self.current_player:
+            return "当前不在公开叫价阶段"
+
         cap = next((c for c in self.captains if c["name"] == captain_name), None)
         if not cap:
             return "队长不存在"
-        if captain_name in self.passed_captains:
-            return "你已放弃本场竞拍"
-
-        if action == "pass":
-            self.passed_captains.add(cap["name"])
-            self.add_log(f"[{cap['name']}] 放弃，退出本场竞拍", "info")
-            self.bidding = None
-            if self._maybe_hammer():
-                return None
-            self._advance_turn()
-            return None
 
         position = self.current_player["position"]
+        if action == "pass":
+            if not self.captain_can_bid(cap, position) and captain_name not in self.passed_captains:
+                reason = self.captain_skip_reason(cap, position)
+                return f"不能参与本场竞拍（{reason}）"
+            self.passed_captains.add(captain_name)
+            self.captain_bids.setdefault(captain_name, None)
+            self.add_log(f"[{captain_name}] 放弃本轮竞拍", "info")
+            return None
+
+        if action not in ("bid", "buyout"):
+            return "无效操作"
+
         if not self.captain_can_bid(cap, position):
             reason = self.captain_skip_reason(cap, position)
             return f"不能参与本场竞拍（{reason}）"
 
-        if action == "buyout":
-            if self.round_num != 1:
-                self.add_log(f"[{cap['name']}] 一口价仅首轮可用", "warn")
-                self.bidding = None
-                self._advance_turn()
-                return None
-            buyout = self.current_player["buyoutPrice"]
-            if buyout % 10 != 0:
-                return "一口价配置异常"
-            if cap["funds"] < buyout:
-                return "一口价资金不足"
-            self._complete_sale(cap, buyout, True)
-            return None
-
-        if action != "bid":
-            return "无效操作"
-
-        bid_amount: int | None = amount
-        if bid_amount is None and increment is not None:
-            inc = max(MIN_INCREMENT, min(increment, MAX_INCREMENT))
-            if self.highest_bidder is None:
-                bid_amount = self.current_player["startPrice"]
-                if inc > 0 and bid_amount == self.current_price:
-                    bid_amount = self._ceil_to_10(self.current_price + inc)
-            else:
-                bid_amount = self._ceil_to_10(self.current_price + inc)
-        if bid_amount is None:
+        if amount is None:
             return "请指定出价金额"
 
-        err = self._validate_bid_amount(cap, bid_amount)
-        if err:
-            return err
+        min_next = self._min_next_bid()
+        buyout = self._player_buyout_price()
 
-        prev_price = self.current_price
-        if self.highest_bidder is None:
-            self.current_price = bid_amount
-            if bid_amount > self.current_player["startPrice"]:
-                self.last_increment = bid_amount - self.current_player["startPrice"]
-            else:
-                self.last_increment = MIN_INCREMENT
-        else:
-            self.last_increment = bid_amount - prev_price
-            self.current_price = bid_amount
-        self.highest_bidder = cap
-        self.raised_this_round = True
-        if bid_amount > prev_price:
-            self.add_log(
-                f"[{cap['name']}] 出价 {bid_amount}w (+{bid_amount - prev_price}w)",
-                "bid",
-            )
-        else:
-            self.add_log(f"[{cap['name']}] 以起拍价 {bid_amount}w 应价", "bid")
-        self.bidding = None
-        self._advance_turn()
+        if action == "buyout":
+            if not buyout:
+                return "该选手无一口价"
+            if amount < buyout:
+                return f"一口价须为 {buyout}w"
+            if amount > cap["funds"]:
+                return "出价超出剩余资金"
+            self._record_bid(captain_name, buyout)
+            self.add_log(f"[{captain_name}] 一口价 {buyout}w！", "buyout")
+            cap = next(c for c in self.captains if c["name"] == captain_name)
+            self._complete_sale(cap, buyout)
+            return None
+
+        if amount < min_next:
+            return f"出价须 ≥ {min_next}w"
+        if amount > cap["funds"]:
+            return "出价超出剩余资金"
+
+        self._record_bid(captain_name, amount)
+        self.add_log(f"[{captain_name}] 出价 {amount}w", "bid")
         return None
 
-    def _complete_sale(self, cap: dict, price: int, buyout: bool) -> None:
+    def hammer(self) -> str | None:
+        if self.phase != "open_bid" or not self.current_player:
+            return "当前不能落槌"
+        if not self.current_leader or self.current_price <= 0:
+            return "尚无人出价，无法落槌"
+        cap = next(c for c in self.captains if c["name"] == self.current_leader)
+        self.add_log(
+            f"管理员落槌 — {self.current_leader} · {self.current_price}w",
+            "phase",
+        )
+        self._complete_sale(cap, self.current_price)
+        return None
+
+    def _complete_sale(self, cap: dict, price: int) -> None:
         player = next(p for p in self.players if p["serial"] == self.current_player["serial"])
         player["sold"] = True
         player["finalPrice"] = price
         player["winner"] = cap["name"]
         cap["funds"] -= price
         cap["team"].append(player["name"])
-        self.last_buyout = buyout
-        if buyout:
-            self.add_log(f"[{cap['name']}] ★ 一口价 {price}w 买断！", "buyout")
         self._show_winner_reveal(player, cap["name"], price)
-
-    def _finish_player_auction(self) -> None:
-        if self.highest_bidder:
-            self._complete_sale(self.highest_bidder, self.current_price, False)
-        elif self.current_player:
-            self.add_log(f"{self.current_player['name']} 流拍", "warn")
-            self._show_winner_reveal(self.current_player, None, None)
 
     def _show_winner_reveal(self, player: dict, winner: str | None, price: int | None) -> None:
         self.last_result = {
             "player": copy.deepcopy(player),
             "winner": winner,
             "price": price,
-            "buyout": self.last_buyout,
         }
-        self.bidding = None
         self.current_player = None
         self.phase = "winner_reveal"
         if winner and price is not None:
             self.add_log(f"成交：{winner} 以 {price}w 签下 {player['name']}", "win")
+        else:
+            self.add_log(f"流拍：{player['name']}", "warn")
 
     def confirm_winner(self) -> None:
         if self.phase != "winner_reveal":
@@ -552,5 +461,4 @@ class AuctionEngine:
         self._start_draw()
 
 
-# 全局单例
 auction = AuctionEngine()

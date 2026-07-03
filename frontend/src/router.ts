@@ -3,12 +3,14 @@ import { getToken } from './api/client'
 import { fetchMe } from './api/auth'
 import AuctionView from './views/AuctionView.vue'
 import RosterAdmin from './views/RosterAdmin.vue'
+import SpectatorView from './views/SpectatorView.vue'
 import LoginView from './views/LoginView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
+    { path: '/spectator', name: 'spectator', component: SpectatorView, meta: { public: true } },
     { path: '/', name: 'auction', component: AuctionView, meta: { requiresAuth: true } },
     {
       path: '/admin',
