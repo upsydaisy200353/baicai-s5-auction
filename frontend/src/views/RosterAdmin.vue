@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   createEntry,
   deleteEntry,
@@ -19,14 +19,33 @@ const loading = ref(true)
 const savingId = ref<number | null>(null)
 const message = ref('')
 const error = ref('')
+const activeTab = ref<'players' | 'captains'>('players')
 
-const newRow = reactive({
-  identity: 'player' as 'player' | 'captain',
+const players = computed(() =>
+  entries.value
+    .filter((e) => e.identity === 'player')
+    .sort((a, b) => a.sortOrder - b.sortOrder),
+)
+
+const captains = computed(() =>
+  entries.value
+    .filter((e) => e.identity === 'captain')
+    .sort((a, b) => a.sortOrder - b.sortOrder),
+)
+
+const newPlayer = reactive({
   serial: '',
   name: '',
   poolLetter: 'A' as PoolLetter,
   startPrice: 100,
   buyoutPrice: 300,
+  sortOrder: 999,
+})
+
+const newCaptain = reactive({
+  name: '',
+  poolLetter: 'A' as PoolLetter,
+  startPrice: 100,
   funds: 2500,
   sortOrder: 999,
 })
@@ -47,6 +66,12 @@ onMounted(load)
 
 function posLabel(letter: PoolLetter) {
   return `${letter}·${POSITION_NAMES[POOL_LETTERS[letter]]}`
+}
+
+function nextSortOrder(identity: 'player' | 'captain') {
+  const list = identity === 'player' ? players.value : captains.value
+  if (list.length === 0) return 1
+  return Math.max(...list.map((e) => e.sortOrder)) + 1
 }
 
 async function save(entry: RosterEntry) {
@@ -85,26 +110,48 @@ async function remove(entry: RosterEntry) {
   }
 }
 
-async function addRow() {
+async function addPlayer() {
   message.value = ''
   error.value = ''
   try {
-    const payload = {
-      sortOrder: newRow.sortOrder,
-      identity: newRow.identity,
-      serial: newRow.identity === 'player' ? newRow.serial : null,
-      name: newRow.name,
-      poolLetter: newRow.poolLetter,
-      startPrice: newRow.startPrice,
-      buyoutPrice: newRow.identity === 'player' ? newRow.buyoutPrice : null,
-      funds: newRow.identity === 'captain' ? newRow.funds : null,
-    }
-    const created = await createEntry(payload)
+    const created = await createEntry({
+      sortOrder: newPlayer.sortOrder || nextSortOrder('player'),
+      identity: 'player',
+      serial: newPlayer.serial,
+      name: newPlayer.name,
+      poolLetter: newPlayer.poolLetter,
+      startPrice: newPlayer.startPrice,
+      buyoutPrice: newPlayer.buyoutPrice,
+      funds: null,
+    })
     entries.value.push(created)
-    entries.value.sort((a, b) => a.sortOrder - b.sortOrder)
-    message.value = `已添加：${created.name}`
-    newRow.name = ''
-    newRow.serial = ''
+    message.value = `已添加选手：${created.name}`
+    newPlayer.name = ''
+    newPlayer.serial = ''
+    newPlayer.sortOrder = nextSortOrder('player')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '添加失败'
+  }
+}
+
+async function addCaptain() {
+  message.value = ''
+  error.value = ''
+  try {
+    const created = await createEntry({
+      sortOrder: newCaptain.sortOrder || nextSortOrder('captain'),
+      identity: 'captain',
+      serial: null,
+      name: newCaptain.name,
+      poolLetter: newCaptain.poolLetter,
+      startPrice: newCaptain.startPrice,
+      buyoutPrice: null,
+      funds: newCaptain.funds,
+    })
+    entries.value.push(created)
+    message.value = `已添加队长：${created.name}`
+    newCaptain.name = ''
+    newCaptain.sortOrder = nextSortOrder('captain')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '添加失败'
   }
@@ -120,16 +167,6 @@ async function resetDefault() {
     error.value = e instanceof Error ? e.message : '恢复失败'
   }
 }
-
-function onIdentityChange(entry: RosterEntry) {
-  if (entry.identity === 'captain') {
-    entry.buyoutPrice = null
-    entry.serial = null
-  } else {
-    entry.funds = null
-    if (entry.buyoutPrice == null) entry.buyoutPrice = entry.startPrice * 2
-  }
-}
 </script>
 
 <template>
@@ -137,7 +174,9 @@ function onIdentityChange(entry: RosterEntry) {
     <header class="admin-header">
       <div>
         <h1 class="title">名单管理</h1>
-        <p class="subtitle">点「保存」后写入数据库；线上需配置 DATABASE_URL 才永久保存</p>
+        <p class="subtitle">
+          选手与队长分开管理；点「保存」后写入数据库
+        </p>
       </div>
       <div class="actions">
         <button class="btn-ghost" :disabled="loading" @click="load">刷新</button>
@@ -149,128 +188,184 @@ function onIdentityChange(entry: RosterEntry) {
     <div v-if="error" class="flash err">{{ error }}</div>
     <div v-if="loading" class="flash info">加载中…</div>
 
-    <div class="card add-form">
-      <h3>新增条目</h3>
-      <div class="form-grid">
-        <label>
-          身份
-          <select v-model="newRow.identity">
-            <option value="player">选手</option>
-            <option value="captain">队长</option>
-          </select>
-        </label>
-        <label v-if="newRow.identity === 'player'">
-          序号
-          <input v-model="newRow.serial" placeholder="如 A7" />
-        </label>
-        <label>
-          ID / 名称
-          <input v-model="newRow.name" placeholder="名称" />
-        </label>
-        <label>
-          位置池
-          <select v-model="newRow.poolLetter">
-            <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
-              {{ posLabel(l) }}
-            </option>
-          </select>
-        </label>
-        <label>
-          {{ newRow.identity === 'captain' ? '实力分' : '起拍价' }}
-          <input v-model.number="newRow.startPrice" type="number" min="0" />
-        </label>
-        <label v-if="newRow.identity === 'player'">
-          一口价
-          <input v-model.number="newRow.buyoutPrice" type="number" min="0" />
-        </label>
-        <label v-else>
-          竞拍资金
-          <input v-model.number="newRow.funds" type="number" min="0" />
-        </label>
-        <label>
-          排序
-          <input v-model.number="newRow.sortOrder" type="number" min="1" />
-        </label>
-      </div>
-      <button class="btn-primary" @click="addRow">添加</button>
+    <div class="tabs">
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'players' }"
+        @click="activeTab = 'players'"
+      >
+        选手
+        <span class="tab-count">{{ players.length }}</span>
+      </button>
+      <button
+        class="tab tab-captain"
+        :class="{ active: activeTab === 'captains' }"
+        @click="activeTab = 'captains'"
+      >
+        队长
+        <span class="tab-count">{{ captains.length }}</span>
+      </button>
     </div>
 
-    <div class="table-wrap card">
-      <table class="edit-table">
-        <thead>
-          <tr>
-            <th>排序</th>
-            <th>身份</th>
-            <th>序号</th>
-            <th>名称</th>
-            <th>位置池</th>
-            <th>起拍/实力</th>
-            <th>一口价</th>
-            <th>资金</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="entry in entries" :key="entry.id" :class="entry.identity">
-            <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
-            <td>
-              <select
-                v-model="entry.identity"
-                @change="onIdentityChange(entry)"
-              >
-                <option value="player">选手</option>
-                <option value="captain">队长</option>
-              </select>
-            </td>
-            <td>
-              <input
-                v-if="entry.identity === 'player'"
-                v-model="entry.serial"
-                class="input-sm"
-              />
-              <span v-else class="badge badge-gold">队长</span>
-            </td>
-            <td><input v-model="entry.name" /></td>
-            <td>
-              <select v-model="entry.poolLetter">
-                <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
-                  {{ posLabel(l) }}
-                </option>
-              </select>
-            </td>
-            <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
-            <td>
-              <input
-                v-if="entry.identity === 'player'"
-                v-model.number="entry.buyoutPrice"
-                type="number"
-                class="input-sm"
-              />
-              <span v-else>—</span>
-            </td>
-            <td>
-              <input
-                v-if="entry.identity === 'captain'"
-                v-model.number="entry.funds"
-                type="number"
-                class="input-sm"
-              />
-              <span v-else>—</span>
-            </td>
-            <td class="ops">
-              <button
-                class="btn-primary btn-sm"
-                :disabled="savingId === entry.id"
-                @click="save(entry)"
-              >
-                保存
-              </button>
-              <button class="btn-ghost btn-sm" @click="remove(entry)">删</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- 选手管理 -->
+    <section v-show="activeTab === 'players'" class="section">
+      <div class="card add-form">
+        <h3>新增选手</h3>
+        <div class="form-grid">
+          <label>
+            序号
+            <input v-model="newPlayer.serial" placeholder="如 A7" />
+          </label>
+          <label>
+            名称
+            <input v-model="newPlayer.name" placeholder="选手 ID" />
+          </label>
+          <label>
+            位置池
+            <select v-model="newPlayer.poolLetter">
+              <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
+                {{ posLabel(l) }}
+              </option>
+            </select>
+          </label>
+          <label>
+            起拍价
+            <input v-model.number="newPlayer.startPrice" type="number" min="0" />
+          </label>
+          <label>
+            一口价
+            <input v-model.number="newPlayer.buyoutPrice" type="number" min="0" />
+          </label>
+          <label>
+            排序
+            <input v-model.number="newPlayer.sortOrder" type="number" min="1" />
+          </label>
+        </div>
+        <button class="btn-primary" @click="addPlayer">添加选手</button>
+      </div>
+
+      <div class="table-wrap card">
+        <table class="edit-table">
+          <thead>
+            <tr>
+              <th>排序</th>
+              <th>序号</th>
+              <th>名称</th>
+              <th>位置池</th>
+              <th>起拍价</th>
+              <th>一口价</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="players.length === 0">
+              <td colspan="7" class="empty">暂无选手</td>
+            </tr>
+            <tr v-for="entry in players" :key="entry.id">
+              <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
+              <td><input v-model="entry.serial" class="input-sm input-serial" /></td>
+              <td><input v-model="entry.name" /></td>
+              <td>
+                <select v-model="entry.poolLetter">
+                  <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
+                    {{ posLabel(l) }}
+                  </option>
+                </select>
+              </td>
+              <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
+              <td><input v-model.number="entry.buyoutPrice" type="number" class="input-sm" /></td>
+              <td class="ops">
+                <button
+                  class="btn-primary btn-sm"
+                  :disabled="savingId === entry.id"
+                  @click="save(entry)"
+                >
+                  保存
+                </button>
+                <button class="btn-ghost btn-sm" @click="remove(entry)">删</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 队长管理 -->
+    <section v-show="activeTab === 'captains'" class="section section-captain">
+      <div class="card add-form">
+        <h3>新增队长</h3>
+        <div class="form-grid">
+          <label>
+            名称
+            <input v-model="newCaptain.name" placeholder="队长 ID" />
+          </label>
+          <label>
+            位置池
+            <select v-model="newCaptain.poolLetter">
+              <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
+                {{ posLabel(l) }}
+              </option>
+            </select>
+          </label>
+          <label>
+            实力分
+            <input v-model.number="newCaptain.startPrice" type="number" min="0" />
+          </label>
+          <label>
+            竞拍资金
+            <input v-model.number="newCaptain.funds" type="number" min="0" />
+          </label>
+          <label>
+            排序
+            <input v-model.number="newCaptain.sortOrder" type="number" min="1" />
+          </label>
+        </div>
+        <button class="btn-primary btn-captain" @click="addCaptain">添加队长</button>
+      </div>
+
+      <div class="table-wrap card">
+        <table class="edit-table edit-table-captain">
+          <thead>
+            <tr>
+              <th>排序</th>
+              <th>名称</th>
+              <th>位置池</th>
+              <th>实力分</th>
+              <th>竞拍资金</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="captains.length === 0">
+              <td colspan="6" class="empty">暂无队长</td>
+            </tr>
+            <tr v-for="entry in captains" :key="entry.id">
+              <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
+              <td><input v-model="entry.name" class="name-input" /></td>
+              <td>
+                <select v-model="entry.poolLetter">
+                  <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
+                    {{ posLabel(l) }}
+                  </option>
+                </select>
+              </td>
+              <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
+              <td><input v-model.number="entry.funds" type="number" class="input-sm" /></td>
+              <td class="ops">
+                <button
+                  class="btn-primary btn-sm btn-captain"
+                  :disabled="savingId === entry.id"
+                  @click="save(entry)"
+                >
+                  保存
+                </button>
+                <button class="btn-ghost btn-sm" @click="remove(entry)">删</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -323,6 +418,65 @@ function onIdentityChange(entry: RosterEntry) {
   color: #93c5fd;
 }
 
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+}
+
+.tab-captain.active {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: var(--gold);
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.section {
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .add-form {
   margin-bottom: 1rem;
 }
@@ -330,6 +484,10 @@ function onIdentityChange(entry: RosterEntry) {
 .add-form h3 {
   margin-bottom: 0.75rem;
   font-size: 0.9375rem;
+}
+
+.section-captain .add-form h3 {
+  color: var(--gold);
 }
 
 .form-grid {
@@ -380,12 +538,27 @@ select {
   vertical-align: middle;
 }
 
-.edit-table tr.captain {
+.edit-table-captain tbody tr {
   background: rgba(245, 158, 11, 0.04);
+}
+
+.edit-table-captain .name-input {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 1.5rem !important;
 }
 
 .input-sm {
   width: 72px;
+}
+
+.input-serial {
+  width: 56px;
 }
 
 .ops {
@@ -397,5 +570,14 @@ select {
 .btn-sm {
   padding: 0.3rem 0.55rem;
   font-size: 0.75rem;
+}
+
+.btn-captain {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.btn-captain:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 </style>
