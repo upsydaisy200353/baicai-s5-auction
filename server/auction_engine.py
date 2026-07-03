@@ -10,7 +10,7 @@ from typing import Any
 
 from constants import POOL_LETTERS, POSITION_NAMES, POSITIONS
 
-MIN_BID = 10
+MIN_BID = 1
 BID_TIMEOUT_SECONDS = 30
 
 
@@ -18,14 +18,8 @@ def _now_time() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
-def _min_increment(price: int) -> int:
-    if price < 100:
-        return 10
-    if price < 500:
-        return 10
-    if price < 1000:
-        return 50
-    return 100
+def _min_increment(_price: int) -> int:
+    return 1
 
 
 class AuctionEngine:

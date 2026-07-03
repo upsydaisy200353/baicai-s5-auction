@@ -1,8 +1,5 @@
 import type { AuctionPhase } from './types'
 
-export const MIN_INCREMENT = 10
-export const MAX_INCREMENT = 100
-
 /** 公开叫价选人流程 */
 export const CEREMONY_STEPS = [
   { id: 'intro', label: '开场介绍' },
@@ -29,8 +26,8 @@ export function phaseLabel(phase: AuctionPhase): string {
   return map[phase]
 }
 
-export function quickIncrements(currentPrice: number, minNext: number): number[] {
-  const inc = currentPrice < 100 ? 10 : currentPrice < 500 ? 10 : currentPrice < 1000 ? 50 : 100
-  const base = Math.max(minNext, currentPrice + inc)
-  return [base, base + inc, base + inc * 2].filter((v, i, arr) => i === 0 || v !== arr[i - 1])
+export function quickIncrements(_currentPrice: number, minNext: number): number[] {
+  return [minNext, minNext + 1, minNext + 5, minNext + 10].filter(
+    (v, i, arr) => i === 0 || v !== arr[i - 1],
+  )
 }

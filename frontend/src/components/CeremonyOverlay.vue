@@ -77,7 +77,7 @@ onUnmounted(stopSpin)
         <li>管理员逐次选择位置池，每池随机抽出一名选手</li>
         <li>所有队长<strong>同时</strong>公开叫价，价高者得</li>
         <li>每次加价后重置 <strong>30 秒</strong>倒计时；无人继续加价则落槌</li>
-        <li>须满足最低加价（10~100w）；支持一口价秒拍</li>
+        <li>每次加价至少 <strong>1w</strong>，支持任意整数出价；支持一口价秒拍</li>
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
       </ul>
       <div class="captain-preview">
