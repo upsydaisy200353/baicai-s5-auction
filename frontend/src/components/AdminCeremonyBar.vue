@@ -1,23 +1,46 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import PoolPickPanel from './PoolPickPanel.vue'
 import { phaseLabel } from '../auctionEngine'
-import type { AuctionPhase, Position } from '../types'
+import type { AuctionPhase, AuctionSettings, Position } from '../types'
 
 const props = defineProps<{
   phase: AuctionPhase
   availablePools: Position[]
   poolOrder: Position[]
   canHammer: boolean
+  auctionSettings?: AuctionSettings
 }>()
 
 const emit = defineEmits<{
   selectPool: [pool: Position]
   hammer: []
   reset: []
+  updateSettings: [settings: AuctionSettings]
 }>()
 
 const showPoolPick = computed(() => props.phase === 'pool_select')
+const showSettings = ref(false)
+const bidExtension = ref(45)
+const noBidTimeout = ref(60)
+
+watch(
+  () => props.auctionSettings,
+  (s) => {
+    if (!s) return
+    bidExtension.value = s.bidExtensionSeconds
+    noBidTimeout.value = s.noBidTimeoutSeconds
+  },
+  { immediate: true },
+)
+
+function applySettings() {
+  emit('updateSettings', {
+    bidExtensionSeconds: bidExtension.value,
+    noBidTimeoutSeconds: noBidTimeout.value,
+  })
+  showSettings.value = false
+}
 </script>
 
 <template>
@@ -27,6 +50,7 @@ const showPoolPick = computed(() => props.phase === 'pool_select')
       <span class="phase-pill">{{ phaseLabel(phase) }}</span>
     </div>
     <div class="bar-actions">
+      <button class="btn-ghost" @click="showSettings = !showSettings">计时设置</button>
       <button
         v-if="canHammer"
         class="btn-primary btn-hammer"
@@ -36,6 +60,22 @@ const showPoolPick = computed(() => props.phase === 'pool_select')
       </button>
       <button class="btn-ghost" @click="emit('reset')">重置仪式</button>
     </div>
+  </div>
+
+  <div v-if="showSettings" class="settings-panel card">
+    <h3 class="settings-title">拍卖计时</h3>
+    <div class="settings-row">
+      <label>
+        加价后倒计时（秒）
+        <input v-model.number="bidExtension" type="number" min="5" max="300" />
+      </label>
+      <label>
+        无人出价流拍（秒）
+        <input v-model.number="noBidTimeout" type="number" min="10" max="600" />
+      </label>
+      <button class="btn-primary" @click="applySettings">保存</button>
+    </div>
+    <p class="settings-hint">有人出价后，{{ bidExtension }}s 内无人继续加价则最高价者得；全程无人出价超过 {{ noBidTimeout }}s 则流拍。</p>
   </div>
 
   <PoolPickPanel
@@ -89,5 +129,48 @@ const showPoolPick = computed(() => props.phase === 'pool_select')
 
 .btn-hammer {
   background: linear-gradient(135deg, #d97706, #b45309);
+}
+
+.settings-panel {
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border-color: rgba(168, 85, 247, 0.2);
+}
+
+.settings-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--purple);
+  margin-bottom: 0.65rem;
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.settings-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.settings-row input {
+  width: 120px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+}
+
+.settings-hint {
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 </style>

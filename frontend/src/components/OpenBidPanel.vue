@@ -10,6 +10,7 @@ const props = defineProps<{
   hasPassed: boolean
   proxyMode?: boolean
   proxyCaptainName?: string | null
+  selfCaptainName?: string | null
   isAdmin?: boolean
 }>()
 
@@ -24,6 +25,16 @@ const localError = ref('')
 
 const player = computed(() => props.openBid.player)
 
+const activeRow = computed(() => {
+  if (props.proxyMode && props.proxyCaptainName) {
+    return props.openBid.captainRows.find((r) => r.name === props.proxyCaptainName) ?? null
+  }
+  if (props.selfCaptainName) {
+    return props.openBid.captainRows.find((r) => r.name === props.selfCaptainName) ?? null
+  }
+  return props.openBid.captainRows.find((r) => r.canBid && !r.passed) ?? null
+})
+
 const activeCaptain = computed((): Captain | null => {
   if (!props.proxyMode || !props.proxyCaptainName) return null
   return (
@@ -32,10 +43,13 @@ const activeCaptain = computed((): Captain | null => {
 })
 
 const maxFunds = computed(() => {
+  if (activeRow.value?.funds != null) return activeRow.value.funds
   if (props.proxyMode && activeCaptain.value) return activeCaptain.value.funds
-  const selfRow = props.openBid.captainRows.find((r) => r.canBid && !r.passed)
-  return selfRow?.funds ?? 0
+  return 0
 })
+
+const canBuyout = computed(() => activeRow.value?.canBuyout ?? false)
+const buyoutUsed = computed(() => activeRow.value?.buyoutUsed ?? false)
 
 const quickBtns = computed(() =>
   quickIncrements(props.openBid.currentPrice, props.openBid.minNextBid),
@@ -98,6 +112,7 @@ function onSubmit() {
       <strong>{{ openBid.currentPrice || openBid.startPrice }}w</strong>
       · 最低加价 {{ openBid.minIncrement }}w
       <template v-if="openBid.buyoutPrice"> · 一口价 {{ openBid.buyoutPrice }}w</template>
+      <template v-if="buyoutUsed"> · <span class="buyout-used">已使用一口价机会</span></template>
     </p>
 
     <div v-if="canSubmit && !hasPassed" class="bid-controls">
@@ -111,7 +126,7 @@ function onSubmit() {
           {{ amt }}w
         </button>
         <button
-          v-if="openBid.buyoutPrice"
+          v-if="openBid.buyoutPrice && canBuyout"
           class="btn-primary btn-buyout"
           @click="emit('buyout')"
         >
@@ -173,6 +188,10 @@ function onSubmit() {
 
 .panel-hint strong {
   color: var(--gold);
+}
+
+.buyout-used {
+  color: var(--text-muted);
 }
 
 .quick-row {

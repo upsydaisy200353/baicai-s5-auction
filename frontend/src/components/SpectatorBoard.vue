@@ -19,6 +19,7 @@ const props = defineProps<{
   currentPlayer: Player | null
   openBid: OpenBidContext | null
   poolOrder: Position[]
+  isAdmin?: boolean
 }>()
 
 const secondsLeft = ref(0)
@@ -48,8 +49,15 @@ onUnmounted(() => {
 
 const timerPct = computed(() => {
   if (!props.openBid) return 0
-  const total = props.openBid.timeoutSeconds || 30
+  const total = props.openBid.timeoutSeconds || 45
   return Math.min(100, (secondsLeft.value / total) * 100)
+})
+
+const timerLabel = computed(() => {
+  if (!props.openBid) return ''
+  return props.openBid.hasBids
+    ? `${props.openBid.bidExtensionSeconds}s 内无人加价则落槌`
+    : `${props.openBid.noBidTimeoutSeconds}s 内无人出价则流拍`
 })
 
 const timerUrgent = computed(() => secondsLeft.value > 0 && secondsLeft.value <= 8)
@@ -136,7 +144,7 @@ function posLabel(position: Position | null | undefined) {
             />
             <div class="captain-info">
               <span class="captain-name">{{ row.name }}</span>
-              <span class="captain-funds">余 {{ row.funds }}w</span>
+              <span v-if="row.funds != null" class="captain-funds">余 {{ row.funds }}w</span>
             </div>
             <div class="captain-bid">
               <span v-if="row.passed" class="bid-pass">放弃</span>
@@ -188,6 +196,7 @@ function posLabel(position: Position | null | undefined) {
             </div>
 
             <div class="lot-auction">
+              <p class="timer-hint">{{ timerLabel }}</p>
               <div class="timer-ring" :class="{ urgent: timerUrgent }">
                 <svg viewBox="0 0 120 120" class="timer-svg">
                   <circle cx="60" cy="60" r="52" class="timer-bg" />
@@ -227,6 +236,10 @@ function posLabel(position: Position | null | undefined) {
               </div>
               <p v-else class="no-bid">尚无人出价，等待队长叫价…</p>
             </div>
+          </div>
+
+          <div v-if="$slots.bidPanel" class="bid-panel-slot">
+            <slot name="bidPanel" />
           </div>
         </template>
 
@@ -680,6 +693,19 @@ function posLabel(position: Position | null | undefined) {
   font-size: 0.875rem;
   color: var(--text-muted);
   text-align: center;
+}
+
+.timer-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: -0.25rem;
+}
+
+.bid-panel-slot {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
 }
 
 .waiting-state {

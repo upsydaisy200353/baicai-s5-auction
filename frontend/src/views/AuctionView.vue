@@ -10,6 +10,7 @@ import {
   selectPool,
   startAuction,
   submitOpenBid,
+  updateAuctionSettings,
   type ServerAuctionState,
 } from '../api/auction'
 import AdminCeremonyBar from '../components/AdminCeremonyBar.vue'
@@ -138,6 +139,10 @@ async function onReset() {
   await runAction(apiResetAuction, '已重置')
 }
 
+async function onUpdateSettings(settings: { bidExtensionSeconds: number; noBidTimeoutSeconds: number }) {
+  await runAction(() => updateAuctionSettings(settings), '计时已更新')
+}
+
 async function onBid(amount: number) {
   await runAction(() =>
     submitOpenBid('bid', {
@@ -221,9 +226,11 @@ async function onBuyout() {
           :available-pools="state.availablePools"
           :pool-order="state.poolOrder"
           :can-hammer="canHammer"
+          :auction-settings="state.auctionSettings"
           @select-pool="onSelectPool"
           @hammer="onHammer"
           @reset="onReset"
+          @update-settings="onUpdateSettings"
         />
 
         <SpectatorBoard
@@ -233,39 +240,43 @@ async function onBuyout() {
           :current-player="state.currentPlayer"
           :open-bid="state.openBid"
           :pool-order="state.poolOrder"
-        />
-
-        <div v-if="isAdmin && state.phase === 'open_bid'" class="proxy-row card">
-          <label class="proxy-label">
-            代出价队长
-            <select v-model="proxyCaptain" class="proxy-select">
-              <option
-                v-for="row in state.openBid?.captainRows.filter((r) => r.canBid || r.passed)"
-                :key="row.name"
-                :value="row.name"
-              >
-                {{ row.name }}{{ row.passed ? '（已放弃）' : '' }}
-              </option>
-            </select>
-          </label>
-        </div>
-
-        <OpenBidPanel
-          v-if="state.phase === 'open_bid' && state.openBid && (canSubmitBid || hasPassed)"
-          :open-bid="state.openBid"
-          :can-submit="canSubmitBid"
-          :has-passed="hasPassed"
-          :proxy-mode="isAdmin"
-          :proxy-captain-name="proxyCaptain"
           :is-admin="isAdmin"
-          @bid="onBid"
-          @pass="onPass"
-          @buyout="onBuyout"
-        />
+        >
+          <template v-if="state.phase === 'open_bid'" #bidPanel>
+            <div v-if="isAdmin" class="proxy-row">
+              <label class="proxy-label">
+                代出价队长
+                <select v-model="proxyCaptain" class="proxy-select">
+                  <option
+                    v-for="row in state.openBid?.captainRows.filter((r) => r.canBid || r.passed)"
+                    :key="row.name"
+                    :value="row.name"
+                  >
+                    {{ row.name }}{{ row.passed ? '（已放弃）' : '' }}
+                  </option>
+                </select>
+              </label>
+            </div>
 
-        <div v-else-if="state.phase === 'open_bid' && isCaptain && !canSubmitBid" class="banner info">
-          {{ myCaptainRow?.skipReason ?? '当前无法参与本场竞拍' }}
-        </div>
+            <OpenBidPanel
+              v-if="state.openBid && (canSubmitBid || hasPassed)"
+              :open-bid="state.openBid"
+              :can-submit="canSubmitBid"
+              :has-passed="hasPassed"
+              :proxy-mode="isAdmin"
+              :proxy-captain-name="proxyCaptain"
+              :self-captain-name="captainName"
+              :is-admin="isAdmin"
+              @bid="onBid"
+              @pass="onPass"
+              @buyout="onBuyout"
+            />
+
+            <div v-else-if="isCaptain && !canSubmitBid" class="banner info compact">
+              {{ myCaptainRow?.skipReason ?? '当前无法参与本场竞拍' }}
+            </div>
+          </template>
+        </SpectatorBoard>
 
         <details v-if="isAdmin" class="admin-log card">
           <summary>操作日志</summary>
@@ -303,6 +314,11 @@ async function onBuyout() {
 .banner.warn {
   background: var(--gold-dim);
   color: var(--gold);
+}
+
+.banner.compact {
+  margin-bottom: 0;
+  padding: 0.5rem 0.75rem;
 }
 
 .idle-header {
@@ -375,8 +391,8 @@ async function onBuyout() {
 }
 
 .proxy-row {
-  margin-top: 1rem;
-  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
 }
 
 .proxy-label {

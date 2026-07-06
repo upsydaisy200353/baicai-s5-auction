@@ -66,12 +66,19 @@ export interface LiveBidEntry {
 
 export interface CaptainBidRow {
   name: string
-  funds: number
+  funds: number | null
   latestBid: number | null
   isLeader: boolean
   canBid: boolean
+  canBuyout: boolean
+  buyoutUsed: boolean
   skipReason: string | null
   passed: boolean
+}
+
+export interface AuctionSettings {
+  bidExtensionSeconds: number
+  noBidTimeoutSeconds: number
 }
 
 export interface OpenBidContext {
@@ -84,7 +91,12 @@ export interface OpenBidContext {
   minIncrement: number
   startPrice: number
   buyoutPrice: number | null
+  hasBids: boolean
   deadlineMs: number
+  noBidDeadlineMs: number
+  bidDeadlineMs: number
+  bidExtensionSeconds: number
+  noBidTimeoutSeconds: number
   timeoutSeconds: number
   secondsRemaining: number
   liveBids: LiveBidEntry[]
@@ -117,4 +129,5 @@ export interface AuctionSnapshot {
   drawCandidates: Player[]
   lastResult: LastResult | null
   availablePools?: Position[]
+  auctionSettings?: AuctionSettings
 }

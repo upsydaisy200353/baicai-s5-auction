@@ -93,8 +93,9 @@ onUnmounted(stopCarousel)
       <ul class="rule-list">
         <li>管理员逐次选择位置池，每池随机抽出一名选手</li>
         <li>所有队长<strong>同时</strong>公开叫价，价高者得</li>
-        <li>每次加价后重置 <strong>30 秒</strong>倒计时；无人继续加价则落槌</li>
-        <li>每次加价至少 <strong>1w</strong>，支持任意整数出价；支持一口价秒拍</li>
+        <li>每次加价后重置 <strong>45 秒</strong>倒计时；无人继续加价则落槌</li>
+        <li>每次加价至少 <strong>10w</strong>；支持一口价秒拍（每位队长整场仅一次）</li>
+        <li>若<strong>60 秒</strong>内尚无人出价则流拍（管理员可调整计时）</li>
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
       </ul>
       <div class="captain-preview">
@@ -154,11 +155,12 @@ onUnmounted(stopCarousel)
         class="winner-avatar"
       />
       <p class="eyebrow">{{ lastResult.winner ? '落槌成交' : '流拍' }}</p>
-      <h2 class="overlay-title">{{ lastResult.player.name }}</h2>
-      <p v-if="lastResult.winner" class="winner-line">
-        <span class="winner-cap">{{ lastResult.winner }}</span>
-        <span class="winner-price">{{ lastResult.price }}w</span>
-      </p>
+      <h2 v-if="lastResult.winner" class="overlay-title winner-announce">
+        由 <span class="winner-cap">{{ lastResult.winner }}</span> 队长拍得
+        <span class="winner-player">{{ lastResult.player.name }}</span>
+      </h2>
+      <h2 v-else class="overlay-title">{{ lastResult.player.name }}</h2>
+      <p v-if="lastResult.winner" class="winner-price-line">{{ lastResult.price }}w</p>
       <p v-else class="overlay-desc">本轮无人拍下</p>
       <button v-if="isAdmin" class="btn-primary ceremony-btn" @click="emit('confirmWinner')">
         继续
@@ -452,6 +454,29 @@ onUnmounted(stopCarousel)
 
 @keyframes confettiFall {
   to { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+.winner-announce {
+  font-size: 1.65rem;
+  line-height: 1.45;
+}
+
+.winner-player {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 2rem;
+  background: linear-gradient(135deg, #fff, var(--gold-bright));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.winner-price-line {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--gold);
+  margin-bottom: 1.25rem;
 }
 
 .winner-line {

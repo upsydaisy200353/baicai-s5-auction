@@ -27,7 +27,7 @@ export function phaseLabel(phase: AuctionPhase): string {
 }
 
 export function quickIncrements(_currentPrice: number, minNext: number): number[] {
-  return [minNext, minNext + 1, minNext + 5, minNext + 10].filter(
+  return [minNext, minNext + 10, minNext + 20, minNext + 50].filter(
     (v, i, arr) => i === 0 || v !== arr[i - 1],
   )
 }

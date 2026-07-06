@@ -10,8 +10,10 @@ from typing import Any
 
 from constants import POOL_LETTERS, POSITION_NAMES, POSITIONS
 
-MIN_BID = 1
-BID_TIMEOUT_SECONDS = 30
+MIN_BID = 10
+MIN_INCREMENT = 10
+DEFAULT_BID_EXTENSION_SECONDS = 45
+DEFAULT_NO_BID_TIMEOUT_SECONDS = 60
 
 
 def _now_time() -> str:
@@ -19,7 +21,7 @@ def _now_time() -> str:
 
 
 def _min_increment(_price: int) -> int:
-    return 1
+    return MIN_INCREMENT
 
 
 class AuctionEngine:
@@ -47,8 +49,12 @@ class AuctionEngine:
         self.live_bids: list[dict] = []
         self.captain_bids: dict[str, int | None] = {}
         self.bid_deadline_ms = 0
+        self.no_bid_deadline_ms = 0
+        self.bid_extension_seconds = DEFAULT_BID_EXTENSION_SECONDS
+        self.no_bid_timeout_seconds = DEFAULT_NO_BID_TIMEOUT_SECONDS
         self._bid_seq = 0
         self.passed_captains: set[str] = set()
+        self.used_buyout: set[str] = set()
 
     def load_roster(self, players: list[dict], captains: list[dict]) -> None:
         self.players = copy.deepcopy(players)
@@ -136,11 +142,31 @@ class AuctionEngine:
             return start
         return self.current_price + _min_increment(self.current_price)
 
+    def set_timing(self, bid_extension_seconds: int, no_bid_timeout_seconds: int) -> None:
+        self.bid_extension_seconds = max(5, min(300, bid_extension_seconds))
+        self.no_bid_timeout_seconds = max(10, min(600, no_bid_timeout_seconds))
+
+    def _has_active_bids(self) -> bool:
+        return bool(self.current_leader) and self.current_price > 0
+
     def _reset_bid_timer(self) -> None:
-        self.bid_deadline_ms = int(time.time() * 1000) + BID_TIMEOUT_SECONDS * 1000
+        self.bid_deadline_ms = int(time.time() * 1000) + self.bid_extension_seconds * 1000
+        self.no_bid_deadline_ms = 0
+
+    def _start_no_bid_timer(self) -> None:
+        self.no_bid_deadline_ms = int(time.time() * 1000) + self.no_bid_timeout_seconds * 1000
+        self.bid_deadline_ms = 0
+
+    def _active_deadline_ms(self) -> int:
+        if self._has_active_bids():
+            return self.bid_deadline_ms
+        return self.no_bid_deadline_ms
 
     def _seconds_remaining(self) -> float:
-        return max(0.0, (self.bid_deadline_ms - int(time.time() * 1000)) / 1000.0)
+        deadline = self._active_deadline_ms()
+        if not deadline:
+            return 0.0
+        return max(0.0, (deadline - int(time.time() * 1000)) / 1000.0)
 
     def _reset_open_bid_state(self) -> None:
         self.current_price = 0
@@ -149,7 +175,7 @@ class AuctionEngine:
         self.captain_bids = {}
         self.passed_captains = set()
         self._bid_seq = 0
-        self._reset_bid_timer()
+        self._start_no_bid_timer()
 
     def _record_bid(self, captain_name: str, amount: int) -> None:
         self._bid_seq += 1
@@ -176,19 +202,34 @@ class AuctionEngine:
             leader = next(
                 (c for c in self.captains if c["name"] == self.current_leader), None
             )
+        buyout = self._player_buyout_price()
         captain_rows = []
         for cap in self.captains:
+            can_bid = self.captain_can_bid(cap, position)
+            buyout_used = cap["name"] in self.used_buyout
+            can_buyout = (
+                bool(buyout)
+                and can_bid
+                and not buyout_used
+                and cap["funds"] >= (buyout or 0)
+            )
             captain_rows.append(
                 {
                     "name": cap["name"],
                     "funds": cap["funds"],
                     "latestBid": self.captain_bids.get(cap["name"]),
                     "isLeader": cap["name"] == self.current_leader,
-                    "canBid": self.captain_can_bid(cap, position),
+                    "canBid": can_bid,
+                    "canBuyout": can_buyout,
+                    "buyoutUsed": buyout_used,
                     "skipReason": self.captain_skip_reason(cap, position),
                     "passed": cap["name"] in self.passed_captains,
                 }
             )
+        has_bids = self._has_active_bids()
+        timeout_seconds = (
+            self.bid_extension_seconds if has_bids else self.no_bid_timeout_seconds
+        )
         return {
             "player": copy.deepcopy(self.current_player),
             "eligibleCaptains": [copy.deepcopy(c) for c in eligible],
@@ -198,9 +239,14 @@ class AuctionEngine:
             "minNextBid": self._min_next_bid(),
             "minIncrement": _min_increment(max(self.current_price, self._player_start_price())),
             "startPrice": self._player_start_price(),
-            "buyoutPrice": self._player_buyout_price(),
-            "deadlineMs": self.bid_deadline_ms,
-            "timeoutSeconds": BID_TIMEOUT_SECONDS,
+            "buyoutPrice": buyout,
+            "hasBids": has_bids,
+            "deadlineMs": self._active_deadline_ms(),
+            "noBidDeadlineMs": self.no_bid_deadline_ms,
+            "bidDeadlineMs": self.bid_deadline_ms,
+            "bidExtensionSeconds": self.bid_extension_seconds,
+            "noBidTimeoutSeconds": self.no_bid_timeout_seconds,
+            "timeoutSeconds": timeout_seconds,
             "secondsRemaining": round(self._seconds_remaining(), 1),
             "liveBids": copy.deepcopy(self.live_bids),
             "captainRows": captain_rows,
@@ -211,15 +257,18 @@ class AuctionEngine:
             return
         if self._seconds_remaining() > 0:
             return
-        if self.current_leader and self.current_price > 0:
+        if self._has_active_bids():
             cap = next(c for c in self.captains if c["name"] == self.current_leader)
             self.add_log(
-                f"倒计时结束 — {self.current_leader} 以 {self.current_price}w 拍得",
+                f"{self.bid_extension_seconds}s 内无人加价 — {self.current_leader} 以 {self.current_price}w 拍得",
                 "phase",
             )
             self._complete_sale(cap, self.current_price)
             return
-        self.add_log("倒计时结束 — 无人出价，流拍", "warn")
+        self.add_log(
+            f"{self.no_bid_timeout_seconds}s 内无人出价 — 流拍",
+            "warn",
+        )
         player = self.current_player
         self._show_winner_reveal(player, None, None)
 
@@ -238,6 +287,10 @@ class AuctionEngine:
             "drawCandidates": copy.deepcopy(self.draw_candidates),
             "lastResult": copy.deepcopy(self.last_result),
             "availablePools": self.available_pools,
+            "auctionSettings": {
+                "bidExtensionSeconds": self.bid_extension_seconds,
+                "noBidTimeoutSeconds": self.no_bid_timeout_seconds,
+            },
         }
 
     def start(self) -> None:
@@ -250,7 +303,14 @@ class AuctionEngine:
         self.phase = "intro"
         self.add_log("公开叫价选人仪式开始", "phase")
         self.add_log("全员可同时加价，倒计时内无人继续加价则由最高价者拍得", "info")
-        self.add_log(f"每次加价后重置 {BID_TIMEOUT_SECONDS}s 倒计时", "info")
+        self.add_log(
+            f"每次加价至少 {MIN_INCREMENT}w；加价后 {self.bid_extension_seconds}s 内无人继续加价则落槌",
+            "info",
+        )
+        self.add_log(
+            f"若 {self.no_bid_timeout_seconds}s 内尚无人出价则流拍；每位队长整场仅可一口价一次",
+            "info",
+        )
         self.add_log("每队每个位置仅可签下一名选手（含队长本人位置）", "info")
 
     def begin_pool_select(self) -> None:
@@ -393,10 +453,13 @@ class AuctionEngine:
         if action == "buyout":
             if not buyout:
                 return "该选手无一口价"
+            if captain_name in self.used_buyout:
+                return "本场仪式已使用过一口价机会（每位队长仅一次）"
             if amount < buyout:
                 return f"一口价须为 {buyout}w"
             if amount > cap["funds"]:
                 return "出价超出剩余资金"
+            self.used_buyout.add(captain_name)
             self._record_bid(captain_name, buyout)
             self.add_log(f"[{captain_name}] 一口价 {buyout}w！", "buyout")
             cap = next(c for c in self.captains if c["name"] == captain_name)

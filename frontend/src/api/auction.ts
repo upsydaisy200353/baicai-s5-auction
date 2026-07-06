@@ -1,6 +1,7 @@
 import { apiRequest } from './client'
 import type {
   AuctionPhase,
+  AuctionSettings,
   Captain,
   LastResult,
   LogEntry,
@@ -22,6 +23,7 @@ export interface ServerAuctionState {
   drawCandidates: Player[]
   lastResult: LastResult | null
   availablePools: Position[]
+  auctionSettings?: AuctionSettings
 }
 
 export function fetchAuctionState() {
@@ -78,4 +80,11 @@ export function submitOpenBid(
 
 export function resetAuction() {
   return apiRequest<ServerAuctionState>('/auction/reset', { method: 'POST' })
+}
+
+export function updateAuctionSettings(settings: AuctionSettings) {
+  return apiRequest<ServerAuctionState>('/auction/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  })
 }

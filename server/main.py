@@ -85,6 +85,11 @@ class OpenBidPayload(BaseModel):
     captainName: str | None = None
 
 
+class AuctionSettingsPayload(BaseModel):
+    bidExtensionSeconds: int = Field(ge=5, le=300)
+    noBidTimeoutSeconds: int = Field(ge=10, le=600)
+
+
 def entries_to_auction_data(entries: list[dict]) -> dict:
     players = []
     captains = []
@@ -163,8 +168,34 @@ def enrich_auction_state(state: dict) -> dict:
     return state
 
 
-def auction_state_response() -> dict:
-    return enrich_auction_state(auction.to_state())
+def _mask_funds_for_viewer(state: dict, viewer_captain: str | None, is_admin: bool) -> dict:
+    """管理员可见全部资金；队长仅可见自己；观战隐藏全部。"""
+    if is_admin:
+        return state
+
+    def mask_captain_list(captains: list[dict]) -> None:
+        for c in captains:
+            if c.get("name") != viewer_captain:
+                c["funds"] = None
+
+    def mask_captain_rows(rows: list[dict]) -> None:
+        for row in rows:
+            if row.get("name") != viewer_captain:
+                row["funds"] = None
+
+    mask_captain_list(state.get("captains", []))
+    open_bid = state.get("openBid")
+    if open_bid:
+        mask_captain_rows(open_bid.get("captainRows", []))
+        mask_captain_list(open_bid.get("eligibleCaptains", []))
+    return state
+
+
+def auction_state_response(user: dict | None = None) -> dict:
+    state = enrich_auction_state(auction.to_state())
+    is_admin = bool(user and user.get("role") == "admin")
+    viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
+    return _mask_funds_for_viewer(state, viewer_captain, is_admin)
 
 
 def load_auction_from_db() -> None:
@@ -306,8 +337,8 @@ def reset_roster(_user: dict = Depends(require_admin)):
 # ── 多人拍卖 ──────────────────────────────────────
 
 @app.get("/api/auction/state")
-def auction_state(_user: dict = Depends(get_current_user)):
-    return auction_state_response()
+def auction_state(user: dict = Depends(get_current_user)):
+    return auction_state_response(user)
 
 
 @app.get("/api/auction/spectator")
@@ -320,13 +351,13 @@ def auction_spectator():
 def auction_start(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.start()
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/begin")
 def auction_begin(_user: dict = Depends(require_admin)):
     auction.begin_pool_select()
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/select-pool")
@@ -337,13 +368,13 @@ def auction_select_pool(
     err = auction.select_next_pool(payload.pool)
     if err:
         raise HTTPException(400, err)
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/reveal-draw")
 def auction_reveal_draw(_user: dict = Depends(require_admin)):
     auction.reveal_draw()
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/hammer")
@@ -351,13 +382,13 @@ def auction_hammer(_user: dict = Depends(require_admin)):
     err = auction.hammer()
     if err:
         raise HTTPException(400, err)
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/confirm-winner")
 def auction_confirm_winner(_user: dict = Depends(require_admin)):
     auction.confirm_winner()
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/bid")
@@ -384,14 +415,23 @@ def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or
     )
     if err:
         raise HTTPException(400, err)
-    return auction_state_response()
+    return auction_state_response(user)
+
+
+@app.post("/api/auction/settings")
+def auction_settings(
+    payload: AuctionSettingsPayload,
+    _user: dict = Depends(require_admin),
+):
+    auction.set_timing(payload.bidExtensionSeconds, payload.noBidTimeoutSeconds)
+    return auction_state_response(_user)
 
 
 @app.post("/api/auction/reset")
 def auction_reset(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.reset()
-    return auction_state_response()
+    return auction_state_response(_user)
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
