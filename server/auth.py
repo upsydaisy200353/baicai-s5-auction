@@ -40,13 +40,15 @@ def verify_password(password: str, stored: str) -> bool:
     return secrets.compare_digest(check, digest)
 
 
-def create_token(user: dict[str, Any]) -> str:
+def create_token(user: dict[str, Any], session_version: int | None = None) -> str:
+    sv = session_version if session_version is not None else int(user.get("sessionVersion", 0))
     payload = {
         "sub": str(user["id"]),
         "role": user["role"],
         "username": user["username"],
         "captainName": user.get("captainName"),
         "displayName": user.get("displayName") or user["username"],
+        "sv": sv,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
@@ -78,6 +80,12 @@ async def get_current_user(
     user = get_user_by_id(int(data["sub"]))
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在")
+    token_sv = data.get("sv")
+    if token_sv is None or int(token_sv) != int(user.get("sessionVersion", 0)):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "该账号已在其他地方登录，请重新登录",
+        )
     return _user_payload(user)
 
 

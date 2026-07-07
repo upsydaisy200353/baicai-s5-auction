@@ -2,6 +2,8 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAccountsHint, type AccountsHint } from '../api/auth'
+import { consumeLogoutReason } from '../api/client'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import { useAuth } from '../stores/auth'
 
 const router = useRouter()
@@ -10,13 +12,16 @@ const { login } = useAuth()
 const loading = ref(false)
 const loadingAs = ref('')
 const error = ref('')
+const kickedMsg = ref('')
 const accounts = ref<AccountsHint | null>(null)
 
 onMounted(async () => {
+  kickedMsg.value = consumeLogoutReason() ?? ''
   try {
     accounts.value = await fetchAccountsHint()
   } catch {
     error.value = '请确保后端已启动 (端口 8000)'
+    playSound('uiError')
   }
 })
 
@@ -24,11 +29,15 @@ async function enterAs(username: string) {
   loading.value = true
   loadingAs.value = username
   error.value = ''
+  await unlockAudio()
+  playSound('uiClick')
   try {
     await login(username)
+    playSound('uiConfirm')
     router.replace('/')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '进入失败'
+    playSound('uiError')
   } finally {
     loading.value = false
     loadingAs.value = ''
@@ -71,6 +80,7 @@ async function enterAs(username: string) {
       <h2 class="card-title">进入仪式现场</h2>
       <p class="card-sub">选择你的身份，一键进入</p>
 
+      <p v-if="kickedMsg" class="kicked">{{ kickedMsg }}</p>
       <p v-if="error" class="error">{{ error }}</p>
 
       <div v-if="accounts" class="pick-section">
@@ -251,6 +261,16 @@ async function enterAs(username: string) {
   color: var(--red);
   font-size: 0.8125rem;
   margin-bottom: 0.75rem;
+}
+
+.kicked {
+  color: #fbbf24;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
 }
 
 .pick-section {

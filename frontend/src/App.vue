@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import AppBackground from './components/AppBackground.vue'
+import SoundToggle from './components/SoundToggle.vue'
 import { useAuth } from './stores/auth'
 
 const router = useRouter()
@@ -17,6 +18,7 @@ function onLogout() {
 
 <template>
   <AppBackground />
+  <SoundToggle class="global-sound-toggle" />
   <div v-if="ready" class="shell">
     <nav v-if="user" class="nav card fade-in">
       <RouterLink to="/" class="nav-brand">
@@ -51,6 +53,13 @@ function onLogout() {
 </template>
 
 <style scoped>
+.global-sound-toggle {
+  position: fixed;
+  top: 0.85rem;
+  right: 1rem;
+  z-index: 1200;
+}
+
 .shell {
   max-width: 1440px;
   margin: 0 auto;

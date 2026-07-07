@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { POSITION_COLORS, POSITION_NAMES } from '../constants'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import PlayerAvatar from './PlayerAvatar.vue'
 import type { Captain, LastResult, Player, Position } from '../types'
 
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   begin: []
   revealDraw: []
   confirmWinner: []
+  drawTick: []
 }>()
 
 const carouselIndex = ref(0)
@@ -50,6 +52,7 @@ function startCarousel() {
   spinTimer = setInterval(() => {
     carouselIndex.value = (carouselIndex.value + 1) % list.length
     tick++
+    if (tick % 4 === 0) emit('drawTick')
     if (tick >= totalTicks) {
       stopCarousel()
       if (props.isAdmin) emit('revealDraw')
@@ -61,6 +64,18 @@ function stopCarousel() {
   if (spinTimer) clearInterval(spinTimer)
   spinTimer = null
   spinning.value = false
+}
+
+function onBegin() {
+  void unlockAudio()
+  playSound('uiClick')
+  emit('begin')
+}
+
+function onConfirmWinner() {
+  void unlockAudio()
+  playSound('uiClick')
+  emit('confirmWinner')
 }
 
 watch(
@@ -104,7 +119,7 @@ onUnmounted(stopCarousel)
           <small>{{ c.funds }}w</small>
         </span>
       </div>
-      <button class="btn-primary ceremony-btn" @click="emit('begin')">进入仪式</button>
+      <button class="btn-primary ceremony-btn" @click="onBegin">进入仪式</button>
     </div>
   </div>
 
@@ -162,7 +177,7 @@ onUnmounted(stopCarousel)
       <h2 v-else class="overlay-title">{{ lastResult.player.name }}</h2>
       <p v-if="lastResult.winner" class="winner-price-line">{{ lastResult.price }}w</p>
       <p v-else class="overlay-desc">本轮无人拍下</p>
-      <button v-if="isAdmin" class="btn-primary ceremony-btn" @click="emit('confirmWinner')">
+      <button v-if="isAdmin" class="btn-primary ceremony-btn" @click="onConfirmWinner">
         继续
       </button>
     </div>

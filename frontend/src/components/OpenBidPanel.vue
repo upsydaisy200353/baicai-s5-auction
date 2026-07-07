@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { POSITION_NAMES } from '../constants'
 import { quickIncrements } from '../auctionEngine'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import type { Captain, OpenBidContext } from '../types'
 
 const props = defineProps<{
@@ -81,8 +82,11 @@ function submit(amount: number) {
   const err = validate(amount)
   if (err) {
     localError.value = err
+    playSound('uiError')
     return
   }
+  void unlockAudio()
+  playSound('uiClick')
   emit('bid', amount)
 }
 
@@ -90,9 +94,28 @@ function onSubmit() {
   const amount = parseAmount()
   if (amount == null) {
     localError.value = '请输入有效出价'
+    playSound('uiError')
     return
   }
   submit(amount)
+}
+
+function onQuickBid(amount: number) {
+  void unlockAudio()
+  playSound('uiClick')
+  submit(amount)
+}
+
+function onBuyout() {
+  void unlockAudio()
+  playSound('uiClick')
+  emit('buyout')
+}
+
+function onPass() {
+  void unlockAudio()
+  playSound('uiClick')
+  emit('pass')
 }
 </script>
 
@@ -121,14 +144,14 @@ function onSubmit() {
           v-for="amt in quickBtns"
           :key="amt"
           class="btn-ghost btn-quick"
-          @click="submit(amt)"
+          @click="onQuickBid(amt)"
         >
           {{ amt }}w
         </button>
         <button
           v-if="openBid.buyoutPrice && canBuyout"
           class="btn-primary btn-buyout"
-          @click="emit('buyout')"
+          @click="onBuyout"
         >
           一口价 {{ openBid.buyoutPrice }}w
         </button>
@@ -143,7 +166,7 @@ function onSubmit() {
         />
         <span class="unit">w</span>
         <button class="btn-primary" @click="onSubmit">出价</button>
-        <button class="btn-ghost" @click="emit('pass')">放弃</button>
+        <button class="btn-ghost" @click="onPass">放弃</button>
       </div>
       <p v-if="localError" class="local-error">{{ localError }}</p>
     </div>

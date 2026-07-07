@@ -24,6 +24,7 @@ from auction_engine import auction
 from constants import POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER
 from db import (
     DB_PATH,
+    bump_user_session_version,
     clear_auction_state,
     create_entry,
     delete_entry,
@@ -300,7 +301,8 @@ def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
     if not user:
         raise HTTPException(401, "用户不存在")
-    token = create_token(user)
+    session_version = bump_user_session_version(user["id"])
+    token = create_token(user, session_version)
     return {
         "token": token,
         "user": {

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import PoolPickPanel from './PoolPickPanel.vue'
 import { phaseLabel } from '../auctionEngine'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import type { AuctionPhase, AuctionSettings, Position } from '../types'
 
 const props = defineProps<{
@@ -35,11 +36,24 @@ watch(
 )
 
 function applySettings() {
+  void unlockAudio()
+  playSound('uiClick')
   emit('updateSettings', {
     bidExtensionSeconds: bidExtension.value,
     noBidTimeoutSeconds: noBidTimeout.value,
   })
   showSettings.value = false
+}
+
+function onHammer() {
+  void unlockAudio()
+  emit('hammer')
+}
+
+function onReset() {
+  void unlockAudio()
+  playSound('uiClick')
+  emit('reset')
 }
 </script>
 
@@ -54,11 +68,11 @@ function applySettings() {
       <button
         v-if="canHammer"
         class="btn-primary btn-hammer"
-        @click="emit('hammer')"
+        @click="onHammer"
       >
         落槌
       </button>
-      <button class="btn-ghost" @click="emit('reset')">重置仪式</button>
+      <button class="btn-ghost" @click="onReset">重置仪式</button>
     </div>
   </div>
 

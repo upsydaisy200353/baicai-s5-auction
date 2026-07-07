@@ -3,10 +3,13 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { fetchSpectatorState, type ServerAuctionState } from '../api/auction'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import SpectatorBoard from '../components/SpectatorBoard.vue'
+import { useAuctionSounds } from '../composables/useAuctionSounds'
 
 const state = ref<ServerAuctionState | null>(null)
 const error = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const { onDrawTick } = useAuctionSounds(state)
 
 const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 
@@ -42,6 +45,7 @@ onUnmounted(() => {
         :pool-order="state.poolOrder"
         :draw-candidates="state.drawCandidates"
         :last-result="state.lastResult"
+        @draw-tick="onDrawTick"
       />
 
       <SpectatorBoard

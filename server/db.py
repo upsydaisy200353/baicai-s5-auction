@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL CHECK(role IN ('admin', 'captain')),
     captain_name TEXT,
     display_name TEXT NOT NULL,
+    session_version INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS baicai_users (
     role TEXT NOT NULL CHECK(role IN ('admin', 'captain')),
     captain_name TEXT,
     display_name TEXT NOT NULL,
+    session_version INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_baicai_users_username ON baicai_users(username);
@@ -162,6 +164,7 @@ def init_db() -> None:
 
 def migrate_db() -> None:
     roster = _roster_table()
+    users = _users_table()
     with connect() as conn:
         if DATABASE_URL:
             row = conn.execute(
@@ -173,10 +176,30 @@ def migrate_db() -> None:
             ).fetchone()
             if not row:
                 conn.execute(f"ALTER TABLE {roster} ADD COLUMN avatar TEXT")
+
+            sv_row = conn.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = ? AND column_name = 'session_version'
+                """,
+                (users,),
+            ).fetchone()
+            if not sv_row:
+                conn.execute(
+                    f"ALTER TABLE {users} ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+                )
         else:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(roster)").fetchall()}
             if "avatar" not in cols:
                 conn.execute("ALTER TABLE roster ADD COLUMN avatar TEXT")
+
+            user_cols = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({users})").fetchall()
+            }
+            if "session_version" not in user_cols:
+                conn.execute(
+                    f"ALTER TABLE {users} ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+                )
 
 
 @contextmanager
@@ -375,6 +398,8 @@ def user_row_to_dict(row) -> dict[str, Any]:
     created = row["created_at"]
     if hasattr(created, "isoformat"):
         created = created.isoformat()
+    keys = row.keys() if hasattr(row, "keys") else []
+    session_version = int(row["session_version"]) if "session_version" in keys else 0
     return {
         "id": row["id"],
         "username": row["username"],
@@ -382,6 +407,7 @@ def user_row_to_dict(row) -> dict[str, Any]:
         "role": row["role"],
         "captainName": row["captain_name"],
         "displayName": row["display_name"],
+        "sessionVersion": session_version,
         "createdAt": created,
     }
 
@@ -513,6 +539,21 @@ def get_user_by_captain_name(captain_name: str) -> dict[str, Any] | None:
             f"SELECT * FROM {users} WHERE captain_name = ?", (captain_name,)
         ).fetchone()
     return user_row_to_dict(row) if row else None
+
+
+def bump_user_session_version(user_id: int) -> int:
+    users = _users_table()
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {users} SET session_version = session_version + 1 WHERE id = ?",
+            (user_id,),
+        )
+        row = conn.execute(
+            f"SELECT session_version FROM {users} WHERE id = ?", (user_id,)
+        ).fetchone()
+    if not row:
+        raise ValueError(f"user {user_id} not found")
+    return int(row["session_version"])
 
 
 def update_user_password(user_id: int, password_hash: str) -> None:

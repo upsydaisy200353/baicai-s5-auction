@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { POSITION_COLORS, POSITION_NAMES, POSITION_TO_LETTER } from '../constants'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import type { Position } from '../types'
 
 const props = defineProps<{
@@ -17,6 +18,12 @@ const isFirstPick = computed(() => props.poolOrder.length === 0)
 
 function poolLabel(pos: Position) {
   return `${POSITION_TO_LETTER[pos]}. ${POSITION_NAMES[pos]}`
+}
+
+function onSelect(pool: Position) {
+  void unlockAudio()
+  playSound('poolSelect')
+  emit('select', pool)
 }
 </script>
 
@@ -52,7 +59,7 @@ function poolLabel(pos: Position) {
         type="button"
         class="pool-btn"
         :style="{ '--pool-color': POSITION_COLORS[pos] }"
-        @click="emit('select', pos)"
+        @click="onSelect(pos)"
       >
         <span class="pool-letter">{{ POSITION_TO_LETTER[pos] }}</span>
         <span class="pool-name">{{ POSITION_NAMES[pos] }}</span>

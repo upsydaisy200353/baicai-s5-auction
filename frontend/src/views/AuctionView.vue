@@ -19,6 +19,8 @@ import CeremonyTimeline from '../components/CeremonyTimeline.vue'
 import LogPanel from '../components/LogPanel.vue'
 import OpenBidPanel from '../components/OpenBidPanel.vue'
 import SpectatorBoard from '../components/SpectatorBoard.vue'
+import { useAuctionSounds } from '../composables/useAuctionSounds'
+import { playSound, unlockAudio } from '../lib/soundEngine'
 import { useAuth } from '../stores/auth'
 import type { Position } from '../types'
 
@@ -30,6 +32,10 @@ const error = ref('')
 const actionMsg = ref('')
 const proxyCaptain = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const { onDrawTick, onHammerClick, onActionError } = useAuctionSounds(state, {
+  selfCaptainName: captainName,
+})
 
 const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 
@@ -99,6 +105,7 @@ async function runAction(fn: () => Promise<ServerAuctionState>, label?: string) 
     if (label) actionMsg.value = label
   } catch (e) {
     actionMsg.value = e instanceof Error ? e.message : '操作失败'
+    onActionError()
   }
 }
 
@@ -112,6 +119,8 @@ onUnmounted(() => {
 })
 
 async function onStart() {
+  void unlockAudio()
+  playSound('uiClick')
   await runAction(startAuction)
 }
 
@@ -132,6 +141,7 @@ async function onConfirmWinner() {
 }
 
 async function onHammer() {
+  onHammerClick()
   await runAction(hammerAuction, '已落槌')
 }
 
@@ -191,6 +201,7 @@ async function onBuyout() {
         @begin="onBegin"
         @reveal-draw="onRevealDraw"
         @confirm-winner="onConfirmWinner"
+        @draw-tick="onDrawTick"
       />
 
       <!-- 待开始 -->
