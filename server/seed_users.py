@@ -1,16 +1,20 @@
-"""初始化用户账号（房间口令登录）"""
+"""初始化用户账号（免密登录，password_hash 仅占位）"""
 
 from __future__ import annotations
 
-import os
 import re
 
 from auth import hash_password
-from db import clear_users, count_users, create_user, get_user_by_captain_name, init_db, list_roster, list_users, update_user_password
+from db import clear_users, count_users, create_user, get_user_by_captain_name, init_db, list_roster
 
-DEFAULT_ROOM_PASSWORD = "baicai-s5"
+_PLACEHOLDER_HASH = hash_password("__passwordless__")
 
-# username -> 队长名称（与名单 captain.name 一致）
+ADMIN_USER = {
+    "username": "admin",
+    "role": "admin",
+    "displayName": "管理员",
+}
+
 CAPTAIN_ACCOUNTS = [
     ("wuyanzu", "吴彦祖"),
     ("yazi", "亚子"),
@@ -23,20 +27,6 @@ CAPTAIN_ACCOUNTS = [
 ]
 
 CAPTAIN_NAME_TO_USERNAME = {name: username for username, name in CAPTAIN_ACCOUNTS}
-
-ADMIN_USER = {
-    "username": "admin",
-    "role": "admin",
-    "displayName": "管理员",
-}
-
-
-def room_password() -> str:
-    return os.environ.get("AUCTION_ROOM_PASSWORD", DEFAULT_ROOM_PASSWORD)
-
-
-def room_password_hash() -> str:
-    return hash_password(room_password())
 
 
 def _slug_username(name: str) -> str:
@@ -56,7 +46,7 @@ def ensure_captain_user(captain_name: str) -> dict | None:
     return create_user(
         {
             "username": username,
-            "passwordHash": room_password_hash(),
+            "passwordHash": _PLACEHOLDER_HASH,
             "role": "captain",
             "captainName": captain_name,
             "displayName": captain_name,
@@ -64,23 +54,14 @@ def ensure_captain_user(captain_name: str) -> dict | None:
     )
 
 
-def sync_user_passwords() -> None:
-    """将已有账号口令同步为当前房间口令（便于升级旧库）。"""
-    pwd_hash = room_password_hash()
-    for user in list_users():
-        update_user_password(user["id"], pwd_hash)
-
-
 def seed_users() -> None:
     init_db()
     if count_users() > 0:
-        sync_user_passwords()
         return
-    pwd_hash = room_password_hash()
     create_user(
         {
             "username": ADMIN_USER["username"],
-            "passwordHash": pwd_hash,
+            "passwordHash": _PLACEHOLDER_HASH,
             "role": "admin",
             "captainName": None,
             "displayName": ADMIN_USER["displayName"],
@@ -95,7 +76,7 @@ def seed_users() -> None:
         create_user(
             {
                 "username": username,
-                "passwordHash": pwd_hash,
+                "passwordHash": _PLACEHOLDER_HASH,
                 "role": "captain",
                 "captainName": captain_name,
                 "displayName": captain_name,

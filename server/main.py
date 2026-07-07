@@ -19,7 +19,6 @@ from auth import (
     get_current_user,
     require_admin,
     require_captain_or_admin,
-    verify_password,
 )
 from auction_engine import auction
 from constants import POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER
@@ -75,7 +74,6 @@ app.add_middleware(
 
 class LoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
 
 
 class RosterPayload(BaseModel):
@@ -302,8 +300,6 @@ def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
     if not user:
         raise HTTPException(401, "用户不存在")
-    if not verify_password(payload.password, user["passwordHash"]):
-        raise HTTPException(401, "口令错误")
     token = create_token(user)
     return {
         "token": token,

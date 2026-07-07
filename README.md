@@ -32,12 +32,7 @@ npm run dev             # http://localhost:5173
 
 ### 登录
 
-使用**房间口令**登录（所有账号共用同一口令）：
-
-| 环境变量 | 说明 | 默认值（仅本地） |
-|----------|------|------------------|
-| `AUCTION_ROOM_PASSWORD` | 房间口令 | `baicai-s5` |
-| `AUCTION_JWT_SECRET` | JWT 密钥 | 开发用占位值 |
+选择管理员或队长身份，**免密**一键进入。
 
 | 角色 | 用户名 |
 |------|--------|
@@ -45,6 +40,8 @@ npm run dev             # http://localhost:5173
 | 队长 | `wuyanzu` / `yazi` / `caps` / …（见登录页列表） |
 
 首次启动会自动创建账号（`seed_users.py`）。新增队长时会自动创建对应登录账号。
+
+环境变量 `AUCTION_JWT_SECRET` 用于 JWT 签名（生产环境请设置强密钥）。
 
 ## 拍卖规则（网页版）
 
@@ -72,7 +69,6 @@ npm run dev             # http://localhost:5173
 2. Render Dashboard → **New** → **Blueprint** → 连接仓库
 3. 配置环境变量：
    - `DATABASE_URL` — Neon PostgreSQL 连接串（**强烈建议**）
-   - `AUCTION_ROOM_PASSWORD` — 比赛口令
    - `AUCTION_JWT_SECRET` — 由 Blueprint 自动生成
    - `CORS_ORIGINS` — 可选，默认含 localhost 与 onrender.com 域名
 
@@ -82,7 +78,7 @@ npm run dev             # http://localhost:5173
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/login` | 用户名 + 口令登录 |
+| POST | `/api/auth/login` | 用户名登录（免密） |
 | GET | `/api/auction/state` | 拍卖状态（需登录） |
 | GET | `/api/auction/spectator` | 观战状态（公开） |
 | GET | `/api/meta` | 元数据（含是否仪式进行中） |

@@ -19,10 +19,10 @@ export interface AccountsHint {
   captainCount?: number
 }
 
-export function login(username: string, password: string) {
+export function login(username: string) {
   return apiRequest<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username }),
   })
 }
 
