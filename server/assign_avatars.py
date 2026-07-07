@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 import re
 import shutil
@@ -13,7 +14,8 @@ from seed_users import CAPTAIN_ACCOUNTS
 SERVER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SERVER_DIR.parent
 AVATAR_DIR = PROJECT_ROOT / "frontend" / "public" / "player-avatars"
-DEFAULT_SPLASH_DIR = Path(r"D:\开发类\白菜杯 s4.7 随机英雄\data\splash")
+DEFAULT_SPLASH_DIR = PROJECT_ROOT / "data" / "splash"
+SPLASH_DIR = Path(os.environ.get("SPLASH_DIR", str(DEFAULT_SPLASH_DIR)))
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
@@ -58,7 +60,7 @@ def assign_player_avatars(
 ) -> int:
     """为选手与队长随机分配 splash 图。返回更新数量。"""
     migrate_db()
-    splash_dir = splash_dir or DEFAULT_SPLASH_DIR
+    splash_dir = splash_dir or SPLASH_DIR
     images = list_splash_images(splash_dir)
     if not images:
         print(f"未找到 splash 图片: {splash_dir}")

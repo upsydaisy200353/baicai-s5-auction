@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import random
 import time
 from datetime import datetime
@@ -33,28 +34,122 @@ class AuctionEngine:
         self.captains: list[dict] = []
         self.players: list[dict] = []
         self.captain_names: set[str] = set()
-        self.pool_order: list[str] = []
+        self._reset_ceremony_fields()
+
+    def _reset_ceremony_fields(self) -> None:
+        self.pool_order = []
         self.current_pool_index = 0
-        self.current_pool: str | None = None
-        self.current_player: dict | None = None
-        self.draw_candidates: list[dict] = []
-        self.last_result: dict | None = None
-        self.logs: list[dict] = []
+        self.current_pool = None
+        self.current_player = None
+        self.draw_candidates = []
+        self.last_result = None
+        self.logs = []
         self._log_id = 0
-        self.remaining_pools: list[str] = []
-        self.pending_pick: dict | None = None
-        # 公开叫价
+        self.remaining_pools = []
+        self.pending_pick = None
         self.current_price = 0
-        self.current_leader: str | None = None
-        self.live_bids: list[dict] = []
-        self.captain_bids: dict[str, int | None] = {}
+        self.current_leader = None
+        self.live_bids = []
+        self.captain_bids = {}
         self.bid_deadline_ms = 0
         self.no_bid_deadline_ms = 0
         self.bid_extension_seconds = DEFAULT_BID_EXTENSION_SECONDS
         self.no_bid_timeout_seconds = DEFAULT_NO_BID_TIMEOUT_SECONDS
         self._bid_seq = 0
-        self.passed_captains: set[str] = set()
-        self.used_buyout: set[str] = set()
+        self.passed_captains = set()
+        self.used_buyout = set()
+
+    def reset_ceremony(self) -> None:
+        """回到 idle，保留已加载名单与计时设置。"""
+        players = copy.deepcopy(self.players)
+        captains = copy.deepcopy(self.captains)
+        captain_names = set(self.captain_names)
+        bid_ext = self.bid_extension_seconds
+        no_bid = self.no_bid_timeout_seconds
+        self.reset()
+        self.players = players
+        self.captains = captains
+        self.captain_names = captain_names
+        self.bid_extension_seconds = bid_ext
+        self.no_bid_timeout_seconds = no_bid
+        self.phase = "idle"
+
+    def is_in_progress(self) -> bool:
+        return self.phase != "idle"
+
+    def serialize(self) -> str:
+        return json.dumps(
+            {
+                "phase": self.phase,
+                "captains": self.captains,
+                "players": self.players,
+                "captainNames": list(self.captain_names),
+                "poolOrder": self.pool_order,
+                "currentPoolIndex": self.current_pool_index,
+                "currentPool": self.current_pool,
+                "currentPlayer": self.current_player,
+                "drawCandidates": self.draw_candidates,
+                "lastResult": self.last_result,
+                "logs": self.logs,
+                "_logId": self._log_id,
+                "remainingPools": self.remaining_pools,
+                "pendingPick": self.pending_pick,
+                "currentPrice": self.current_price,
+                "currentLeader": self.current_leader,
+                "liveBids": self.live_bids,
+                "captainBids": self.captain_bids,
+                "bidDeadlineMs": self.bid_deadline_ms,
+                "noBidDeadlineMs": self.no_bid_deadline_ms,
+                "bidExtensionSeconds": self.bid_extension_seconds,
+                "noBidTimeoutSeconds": self.no_bid_timeout_seconds,
+                "_bidSeq": self._bid_seq,
+                "passedCaptains": list(self.passed_captains),
+                "usedBuyout": list(self.used_buyout),
+            },
+            ensure_ascii=False,
+        )
+
+    def deserialize(self, raw: str) -> None:
+        data = json.loads(raw)
+        self.phase = data.get("phase", "idle")
+        self.captains = data.get("captains", [])
+        self.players = data.get("players", [])
+        self.captain_names = set(data.get("captainNames", []))
+        self.pool_order = data.get("poolOrder", [])
+        self.current_pool_index = data.get("currentPoolIndex", 0)
+        self.current_pool = data.get("currentPool")
+        self.current_player = data.get("currentPlayer")
+        self.draw_candidates = data.get("drawCandidates", [])
+        self.last_result = data.get("lastResult")
+        self.logs = data.get("logs", [])
+        self._log_id = data.get("_logId", 0)
+        self.remaining_pools = data.get("remainingPools", [])
+        self.pending_pick = data.get("pendingPick")
+        self.current_price = data.get("currentPrice", 0)
+        self.current_leader = data.get("currentLeader")
+        self.live_bids = data.get("liveBids", [])
+        self.captain_bids = data.get("captainBids", {})
+        self.bid_deadline_ms = data.get("bidDeadlineMs", 0)
+        self.no_bid_deadline_ms = data.get("noBidDeadlineMs", 0)
+        self.bid_extension_seconds = data.get(
+            "bidExtensionSeconds", DEFAULT_BID_EXTENSION_SECONDS
+        )
+        self.no_bid_timeout_seconds = data.get(
+            "noBidTimeoutSeconds", DEFAULT_NO_BID_TIMEOUT_SECONDS
+        )
+        self._bid_seq = data.get("_bidSeq", 0)
+        self.passed_captains = set(data.get("passedCaptains", []))
+        self.used_buyout = set(data.get("usedBuyout", []))
+
+    def tick(self) -> bool:
+        """后台计时：检查全员放弃与倒计时落槌。返回状态是否变化。"""
+        if self.phase != "open_bid" or not self.current_player:
+            return False
+        before = (self.phase, self.current_leader, self.current_price, self.last_result)
+        self._check_all_passed_early()
+        self._maybe_hammer()
+        after = (self.phase, self.current_leader, self.current_price, self.last_result)
+        return before != after
 
     def load_roster(self, players: list[dict], captains: list[dict]) -> None:
         self.players = copy.deepcopy(players)
@@ -98,6 +193,9 @@ class AuctionEngine:
     def captain_skip_reason(self, cap: dict, position: str) -> str | None:
         if cap["name"] in self.passed_captains:
             return "本轮已放弃"
+        return self._position_skip_reason(cap, position)
+
+    def _position_skip_reason(self, cap: dict, position: str) -> str | None:
         if cap["funds"] <= 0:
             return "资金不足"
         own = self._captain_own_position(cap)
@@ -106,6 +204,21 @@ class AuctionEngine:
         if position in self._captain_positions(cap):
             return f"已有{POSITION_NAMES[position]}选手"
         return None
+
+    def _could_bid_captains(self, position: str) -> list[dict]:
+        return [c for c in self.captains if self._position_skip_reason(c, position) is None]
+
+    def _check_all_passed_early(self) -> None:
+        if self.phase != "open_bid" or not self.current_player or self._has_active_bids():
+            return
+        position = self.current_player["position"]
+        could_bid = self._could_bid_captains(position)
+        if not could_bid:
+            return
+        if all(cap["name"] in self.passed_captains for cap in could_bid):
+            self.add_log("全员放弃 — 流拍", "warn")
+            player = self.current_player
+            self._show_winner_reveal(player, None, None)
 
     def eligible_captains(self, position: str) -> list[dict]:
         return [c for c in self.captains if self.captain_can_bid(c, position)]

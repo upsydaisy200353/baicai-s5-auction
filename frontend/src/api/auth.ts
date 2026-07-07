@@ -16,12 +16,13 @@ export interface LoginResponse {
 export interface AccountsHint {
   admin: { username: string; displayName: string; role: string }
   captains: { username: string; displayName: string }[]
+  captainCount?: number
 }
 
-export function login(username: string) {
+export function login(username: string, password: string) {
   return apiRequest<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username }),
+    body: JSON.stringify({ username, password }),
   })
 }
 

@@ -28,6 +28,7 @@ function onLogout() {
       </RouterLink>
       <div class="nav-links">
         <RouterLink to="/" class="nav-link" active-class="active">选人仪式</RouterLink>
+        <RouterLink to="/spectator" class="nav-link" active-class="active">观战大屏</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="nav-link" active-class="active">
           名单管理
         </RouterLink>

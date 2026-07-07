@@ -1,10 +1,10 @@
-# 白菜 S5 选手拍卖 Demo
+# 白菜 S5 选手拍卖
 
-基于名单与拍卖规则的演示程序，包含 **SQLite 数据库**、**FastAPI 后端**、**Vue 3 网页** 和 **Python 命令行**。
+基于名单与拍卖规则的演示程序，包含 **SQLite / PostgreSQL 数据库**、**FastAPI 后端**、**Vue 3 网页**。
 
 ## 快速启动（网页 + 数据库）
 
-**终端 1 — 后端 API（SQLite）**
+**终端 1 — 后端 API**
 
 ```bash
 cd server
@@ -21,100 +21,102 @@ npm install
 npm run dev             # http://localhost:5173
 ```
 
-- **选人仪式** `/` — 需登录；队长在轮到自己时出价，管理员主持流程
-- **名单管理** `/admin` — 仅管理员可访问
-- **登录页** `/login` — 选择管理员或队长身份，**免密**一键进入
+### 页面
 
-### 登录身份
+| 路径 | 说明 |
+|------|------|
+| `/` | 选人仪式（需登录） |
+| `/spectator` | 观战大屏（无需登录） |
+| `/admin` | 名单管理（仅管理员） |
+| `/login` | 登录 |
+
+### 登录
+
+使用**房间口令**登录（所有账号共用同一口令）：
+
+| 环境变量 | 说明 | 默认值（仅本地） |
+|----------|------|------------------|
+| `AUCTION_ROOM_PASSWORD` | 房间口令 | `baicai-s5` |
+| `AUCTION_JWT_SECRET` | JWT 密钥 | 开发用占位值 |
 
 | 角色 | 用户名 |
 |------|--------|
 | 管理员 | `admin` |
-| 队长 | `wuyanzu` / `yazi` / `caps` / `baiweiyi` / `mushroom` / `xxts` / `yume` / `pika` |
+| 队长 | `wuyanzu` / `yazi` / `caps` / …（见登录页列表） |
 
-队长进入后可在密封出价阶段提交自己的出价；管理员可主持全流程，并代队长操作，便于单人模拟。
+首次启动会自动创建账号（`seed_users.py`）。新增队长时会自动创建对应登录账号。
 
-首次启动后端会自动创建账号（`seed_users.py`）；若需重置账号可执行 `python seed_users.py`。
-
-数据库文件：`server/auction.db`（本地开发，永久保存）。
-
-线上部署（Render）默认使用容器内 SQLite，**服务重启后数据会丢失**。要与 [BidKing](https://github.com/upsydaisy200353/bidking) 共用 Neon PostgreSQL 持久化，在 Render 环境变量中设置与 BidKing 相同的 `DATABASE_URL`；本系统会在同一库中自动创建 `baicai_roster`、`baicai_users` 表（与 BidKing 的 `bidking_*` 表互不干扰）。
-
-## 部署（Render）
-
-仓库根目录包含 `Dockerfile` 与 `render.yaml`，单服务同时提供 API 与前端静态页。
-
-1. 将仓库推送到 GitHub
-2. 在 [Render Dashboard](https://dashboard.render.com/) → **New** → **Blueprint** → 连接仓库
-3. 部署完成后访问 https://baicai-s5-auction.onrender.com
-
-环境变量 `AUCTION_JWT_SECRET` 由 Blueprint 自动生成。
-
-在线地址：**https://baicai-s5-auction.onrender.com**  
-GitHub：**https://github.com/upsydaisy200353/baicai-s5-auction**
-
-## 名单管理 API
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/roster` | 获取完整名单（含拍卖用 players/captains） |
-| GET | `/api/roster/entries` | 获取全部条目 |
-| POST | `/api/roster/entries` | 新增条目 |
-| PUT | `/api/roster/entries/{id}` | 更新条目 |
-| DELETE | `/api/roster/entries/{id}` | 删除条目 |
-| POST | `/api/roster/reseed` | 恢复默认名单 |
-
-### 数据字段
-
-| 字段 | 选手 | 队长 |
-|------|------|------|
-| identity | `player` | `captain` |
-| serial | A1、B2… | — |
-| poolLetter | A~E（上/野/中/下/辅） | A~E |
-| startPrice | 起拍价 | 实力分 |
-| buyoutPrice | 一口价 | — |
-| funds | — | 竞拍资金 |
-| sortOrder | 表格展示顺序 | 表格展示顺序 |
-
-**队长不会被拍卖**，仅参与竞价。
-
-## 命令行版（Python，读取 data.py）
-
-```bash
-python main.py roster
-python main.py          # 自动模拟
-python main.py interactive
-```
-
-## 规则实现
+## 拍卖规则（网页版）
 
 | 规则 | 说明 |
 |------|------|
-| 位置池 A~E | 上单 / 打野 / 中单 / 下路 / 辅助 |
-| 位置池选择 | 管理员确定 A~E 五个池的拍卖顺序 |
+| 竞拍方式 | **公开同时叫价**，价高者得 |
+| 最低加价 | 每次至少 **10w** |
+| 加价倒计时 | 有人出价后 **45s** 内无人继续加价则落槌（管理员可调） |
+| 流拍 | 全程 **60s** 无人出价则流拍（管理员可调） |
+| 一口价 | 每位队长整场仪式仅可使用 **一次** |
 | 同位置限制 | 队长本人位置或已有该位置选手时，不参与该位置拍卖 |
-| 出价顺序 | 管理员可设定；未设定时首轮实力强→弱，后续资金少→多 |
-| 竞拍方式 | 英式增价拍卖，队长输入出价或快捷加价 |
-| 出价规则 | 须高于当前价且至少加 1w，任意整数金额均可 |
-| 放弃规则 | 放弃后不再参与该选手的后续轮次；其余人均放弃时落槌 |
-| 落槌 | 一轮内无人加价 → 最高价者胜出；无人出价 → 流拍 |
+| 资金可见性 | 管理员可见全部资金；队长仅可见自己 |
+| 全员放弃 | 所有可竞拍队长放弃后，立即流拍 |
+
+## 数据持久化
+
+- **名单 / 账号**：本地 `server/auction.db`，或线上 PostgreSQL（`DATABASE_URL`）
+- **拍卖进度**：仪式进行中会自动写入 `auction_state` 表，服务重启后可恢复（需 PostgreSQL 或 SQLite 均可）
+
+线上部署请设置与 BidKing 相同的 `DATABASE_URL`，本系统使用独立表 `baicai_roster`、`baicai_users`、`baicai_auction_state`。
+
+## 部署（Render）
+
+1. 推送代码到 GitHub
+2. Render Dashboard → **New** → **Blueprint** → 连接仓库
+3. 配置环境变量：
+   - `DATABASE_URL` — Neon PostgreSQL 连接串（**强烈建议**）
+   - `AUCTION_ROOM_PASSWORD` — 比赛口令
+   - `AUCTION_JWT_SECRET` — 由 Blueprint 自动生成
+   - `CORS_ORIGINS` — 可选，默认含 localhost 与 onrender.com 域名
+
+在线地址：**https://baicai-s5-auction.onrender.com**
+
+## API 摘要
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | 用户名 + 口令登录 |
+| GET | `/api/auction/state` | 拍卖状态（需登录） |
+| GET | `/api/auction/spectator` | 观战状态（公开） |
+| GET | `/api/meta` | 元数据（含是否仪式进行中） |
+| GET | `/api/roster` | 名单（需登录，非管理员隐藏资金） |
+
+仪式进行中，名单增删改会被拒绝。
+
+## 测试
+
+```bash
+cd server
+pytest tests/ -q
+```
+
+## 命令行版（历史演示）
+
+根目录 `auction.py` / `data.py` 为旧的**轮流密封竞价**演示，与网页公开叫价规则不同：
+
+```bash
+python main.py roster
+python main.py
+```
 
 ## 文件结构
 
 ```
-├── data.py                 # 命令行默认名单
-├── auction.py / main.py
 ├── server/
-│   ├── main.py             # FastAPI
-│   ├── db.py               # SQLite
-│   ├── seed.py             # 初始名单
-│   ├── seed_users.py       # 管理员 + 队长账号
-│   ├── auth.py             # JWT 登录
-│   ├── auction_engine.py   # 服务端拍卖状态
-│   └── auction.db          # 数据库（运行后生成）
+│   ├── main.py              # FastAPI
+│   ├── auction_engine.py    # 公开叫价引擎
+│   ├── db.py                # SQLite / PostgreSQL
+│   ├── seed_users.py        # 账号与房间口令
+│   └── tests/
 └── frontend/
     ├── src/views/AuctionView.vue
-    ├── src/views/RosterAdmin.vue
-    ├── src/api/roster.ts
-    └── src/auctionEngine.ts
+    ├── src/views/SpectatorView.vue
+    └── src/views/RosterAdmin.vue
 ```

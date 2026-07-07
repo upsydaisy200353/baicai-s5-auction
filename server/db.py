@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+CREATE TABLE IF NOT EXISTS auction_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 PG_SCHEMA = """
@@ -71,6 +77,12 @@ CREATE TABLE IF NOT EXISTS baicai_users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_baicai_users_username ON baicai_users(username);
+
+CREATE TABLE IF NOT EXISTS baicai_auction_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state_json TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
@@ -450,3 +462,63 @@ def clear_users() -> None:
     users = _users_table()
     with connect() as conn:
         conn.execute(f"DELETE FROM {users}")
+
+
+def _auction_state_table() -> str:
+    return "baicai_auction_state" if DATABASE_URL else "auction_state"
+
+
+def save_auction_state(state_json: str) -> None:
+    table = _auction_state_table()
+    now = _now()
+    with connect() as conn:
+        if DATABASE_URL:
+            conn.execute(
+                f"""
+                INSERT INTO {table} (id, state_json, updated_at)
+                VALUES (1, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                  state_json = EXCLUDED.state_json,
+                  updated_at = EXCLUDED.updated_at
+                """,
+                (state_json, now),
+            )
+        else:
+            conn.execute(f"DELETE FROM {table}")
+            conn.execute(
+                f"INSERT INTO {table} (id, state_json, updated_at) VALUES (1, ?, ?)",
+                (state_json, now),
+            )
+
+
+def load_auction_state() -> str | None:
+    table = _auction_state_table()
+    with connect() as conn:
+        row = conn.execute(f"SELECT state_json FROM {table} WHERE id = 1").fetchone()
+    if not row:
+        return None
+    return row["state_json"]
+
+
+def clear_auction_state() -> None:
+    table = _auction_state_table()
+    with connect() as conn:
+        conn.execute(f"DELETE FROM {table}")
+
+
+def get_user_by_captain_name(captain_name: str) -> dict[str, Any] | None:
+    users = _users_table()
+    with connect() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {users} WHERE captain_name = ?", (captain_name,)
+        ).fetchone()
+    return user_row_to_dict(row) if row else None
+
+
+def update_user_password(user_id: int, password_hash: str) -> None:
+    users = _users_table()
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {users} SET password_hash = ? WHERE id = ?",
+            (password_hash, user_id),
+        )

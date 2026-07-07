@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { apiRequest } from '../api/client'
 import {
   createEntry,
   deleteEntry,
@@ -20,6 +21,7 @@ const savingId = ref<number | null>(null)
 const message = ref('')
 const error = ref('')
 const activeTab = ref<'players' | 'captains'>('players')
+const auctionLocked = ref(false)
 
 const players = computed(() =>
   entries.value
@@ -50,6 +52,15 @@ const newCaptain = reactive({
   sortOrder: 999,
 })
 
+async function loadMeta() {
+  try {
+    const meta = await apiRequest<{ auctionInProgress: boolean }>('/meta')
+    auctionLocked.value = meta.auctionInProgress
+  } catch {
+    auctionLocked.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -62,7 +73,9 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), loadMeta()])
+})
 
 function posLabel(letter: PoolLetter) {
   return `${letter}·${POSITION_NAMES[POOL_LETTERS[letter]]}`
@@ -75,6 +88,7 @@ function nextSortOrder(identity: 'player' | 'captain') {
 }
 
 async function save(entry: RosterEntry) {
+  if (auctionLocked.value) return
   savingId.value = entry.id
   message.value = ''
   error.value = ''
@@ -100,6 +114,7 @@ async function save(entry: RosterEntry) {
 }
 
 async function remove(entry: RosterEntry) {
+  if (auctionLocked.value) return
   if (!confirm(`确定删除 ${entry.name}？`)) return
   try {
     await deleteEntry(entry.id)
@@ -111,6 +126,7 @@ async function remove(entry: RosterEntry) {
 }
 
 async function addPlayer() {
+  if (auctionLocked.value) return
   message.value = ''
   error.value = ''
   try {
@@ -135,6 +151,7 @@ async function addPlayer() {
 }
 
 async function addCaptain() {
+  if (auctionLocked.value) return
   message.value = ''
   error.value = ''
   try {
@@ -180,9 +197,13 @@ async function resetDefault() {
       </div>
       <div class="actions">
         <button class="btn-ghost" :disabled="loading" @click="load">刷新</button>
-        <button class="btn-danger" @click="resetDefault">恢复默认</button>
+        <button class="btn-danger" :disabled="auctionLocked" @click="resetDefault">恢复默认</button>
       </div>
     </header>
+
+    <div v-if="auctionLocked" class="flash warn">
+      仪式进行中，名单已锁定。请先重置仪式后再修改。
+    </div>
 
     <div v-if="message" class="flash ok">{{ message }}</div>
     <div v-if="error" class="flash err">{{ error }}</div>
@@ -241,7 +262,7 @@ async function resetDefault() {
             <input v-model.number="newPlayer.sortOrder" type="number" min="1" />
           </label>
         </div>
-        <button class="btn-primary" @click="addPlayer">添加选手</button>
+        <button class="btn-primary" :disabled="auctionLocked" @click="addPlayer">添加选手</button>
       </div>
 
       <div class="table-wrap card">
@@ -320,7 +341,7 @@ async function resetDefault() {
             <input v-model.number="newCaptain.sortOrder" type="number" min="1" />
           </label>
         </div>
-        <button class="btn-primary btn-captain" @click="addCaptain">添加队长</button>
+        <button class="btn-primary btn-captain" :disabled="auctionLocked" @click="addCaptain">添加队长</button>
       </div>
 
       <div class="table-wrap card">
@@ -416,6 +437,12 @@ async function resetDefault() {
 .flash.info {
   background: rgba(59, 130, 246, 0.1);
   color: #93c5fd;
+}
+
+.flash.warn {
+  background: var(--gold-dim);
+  color: var(--gold);
+  border: 1px solid rgba(245, 197, 66, 0.25);
 }
 
 .tabs {

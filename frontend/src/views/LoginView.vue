@@ -10,6 +10,7 @@ const { login } = useAuth()
 const loading = ref(false)
 const loadingAs = ref('')
 const error = ref('')
+const password = ref('')
 const accounts = ref<AccountsHint | null>(null)
 
 onMounted(async () => {
@@ -21,11 +22,15 @@ onMounted(async () => {
 })
 
 async function enterAs(username: string) {
+  if (!password.value.trim()) {
+    error.value = '请输入房间口令'
+    return
+  }
   loading.value = true
   loadingAs.value = username
   error.value = ''
   try {
-    await login(username)
+    await login(username, password.value)
     router.replace('/')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '进入失败'
@@ -48,11 +53,11 @@ async function enterAs(username: string) {
         <p class="hero-desc">
           全员同时叫价 · 倒计时落槌 · 观战大屏
           <br />
-          选择身份即可进入，无需密码
+          选择身份并输入房间口令进入
         </p>
         <div class="hero-stats">
           <div class="stat">
-            <span class="stat-num">8</span>
+            <span class="stat-num">{{ accounts?.captainCount ?? '—' }}</span>
             <span class="stat-label">队长</span>
           </div>
           <div class="stat">
@@ -69,7 +74,19 @@ async function enterAs(username: string) {
 
     <div class="login-card card fade-in fade-in-delay-1">
       <h2 class="card-title">进入仪式现场</h2>
-      <p class="card-sub">选择你的身份，一键进入</p>
+      <p class="card-sub">选择身份，输入房间口令</p>
+
+      <label class="password-field">
+        <span>房间口令</span>
+        <input
+          v-model="password"
+          type="password"
+          class="password-input"
+          placeholder="向管理员索取"
+          autocomplete="current-password"
+          @keyup.enter="accounts && enterAs(accounts.admin.username)"
+        />
+      </label>
 
       <p v-if="error" class="error">{{ error }}</p>
 
@@ -103,7 +120,7 @@ async function enterAs(username: string) {
 
       <p v-else-if="!error" class="loading-hint">加载身份列表…</p>
 
-      <p class="foot-note">现场演示模式 · 免密登录</p>
+      <p class="foot-note">口令由管理员在环境变量 AUCTION_ROOM_PASSWORD 中设置</p>
     </div>
   </div>
 </template>
@@ -244,7 +261,25 @@ async function enterAs(username: string) {
 .card-sub {
   color: var(--text-muted);
   font-size: 0.875rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.password-input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.55rem 0.65rem;
+  font-size: 0.9rem;
 }
 
 .error {

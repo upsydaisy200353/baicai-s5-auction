@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
+import asyncio
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,14 +17,15 @@ from pydantic import BaseModel, Field, model_validator
 from auth import (
     create_token,
     get_current_user,
-    get_optional_user,
     require_admin,
     require_captain_or_admin,
+    verify_password,
 )
 from auction_engine import auction
 from constants import POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER
 from db import (
     DB_PATH,
+    clear_auction_state,
     create_entry,
     delete_entry,
     get_entry,
@@ -30,16 +33,40 @@ from db import (
     get_user_by_username,
     init_db,
     list_roster,
+    load_auction_state,
+    save_auction_state,
     update_entry,
 )
 from seed import reseed, seed_if_empty
-from seed_users import seed_users
+from seed_users import ensure_captain_user, list_account_hints, seed_users
 
-app = FastAPI(title="白菜杯拍卖 API", version="2.0.0")
+_DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173,https://baicai-s5-auction.onrender.com"
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", _DEFAULT_CORS).split(",")
+    if o.strip()
+]
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _bootstrap_storage()
+    tick_task = asyncio.create_task(_auction_tick_loop())
+    try:
+        yield
+    finally:
+        tick_task.cancel()
+        try:
+            await tick_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="白菜杯拍卖 API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,6 +75,7 @@ app.add_middleware(
 
 class LoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class RosterPayload(BaseModel):
@@ -191,20 +219,36 @@ def _mask_funds_for_viewer(state: dict, viewer_captain: str | None, is_admin: bo
     return state
 
 
-def auction_state_response(user: dict | None = None) -> dict:
+def auction_state_response(user: dict | None = None, *, persist: bool = False) -> dict:
     state = enrich_auction_state(auction.to_state())
     is_admin = bool(user and user.get("role") == "admin")
     viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
-    return _mask_funds_for_viewer(state, viewer_captain, is_admin)
+    masked = _mask_funds_for_viewer(state, viewer_captain, is_admin)
+    if persist or auction.is_in_progress():
+        persist_auction_state()
+    return masked
 
 
-def load_auction_from_db() -> None:
-    data = entries_to_auction_data(list_roster())
-    auction.load_roster(data["players"], data["captains"])
+def persist_auction_state() -> None:
+    if auction.is_in_progress():
+        save_auction_state(auction.serialize())
+    else:
+        clear_auction_state()
 
 
-@app.on_event("startup")
-def startup():
+def restore_auction_state() -> None:
+    raw = load_auction_state()
+    if not raw:
+        return
+    try:
+        auction.deserialize(raw)
+        print(f"Auction state restored (phase={auction.phase})")
+    except Exception as exc:
+        print(f"Failed to restore auction state: {exc}")
+        clear_auction_state()
+
+
+def _bootstrap_storage() -> None:
     init_db()
     backend = get_storage_backend()
     print(f"Storage: {'PostgreSQL (DATABASE_URL)' if backend == 'postgres' else f'SQLite ({DB_PATH})'}")
@@ -215,9 +259,40 @@ def startup():
 
         if assign_player_avatars() == 0:
             ensure_avatar_db_paths()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"Avatar assignment skipped: {exc}")
     load_auction_from_db()
+    restore_auction_state()
+
+
+async def _auction_tick_loop() -> None:
+    while True:
+        await asyncio.sleep(1)
+        try:
+            if auction.tick():
+                persist_auction_state()
+        except Exception as exc:
+            print(f"Auction tick error: {exc}")
+
+
+def _require_idle_auction() -> None:
+    if auction.is_in_progress():
+        raise HTTPException(400, "仪式进行中，无法修改名单")
+
+
+def _mask_roster_funds(data: dict, is_admin: bool) -> dict:
+    if is_admin:
+        return data
+    for cap in data.get("captains", []):
+        cap["funds"] = None
+    return data
+
+
+def load_auction_from_db() -> None:
+    if auction.is_in_progress():
+        return
+    data = entries_to_auction_data(list_roster())
+    auction.load_roster(data["players"], data["captains"])
 
 
 # ── 认证 ──────────────────────────────────────────
@@ -227,6 +302,8 @@ def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
     if not user:
         raise HTTPException(401, "用户不存在")
+    if not verify_password(payload.password, user["passwordHash"]):
+        raise HTTPException(401, "口令错误")
     token = create_token(user)
     return {
         "token": token,
@@ -247,23 +324,7 @@ def me(user: dict = Depends(get_current_user)):
 
 @app.get("/api/auth/accounts-hint")
 def accounts_hint():
-    """可选登录身份（免密，仅供前端展示）"""
-    return {
-        "admin": {"username": "admin", "displayName": "管理员", "role": "admin"},
-        "captains": [
-            {"username": username, "displayName": name}
-            for username, name in [
-                ("wuyanzu", "吴彦祖"),
-                ("yazi", "亚子"),
-                ("caps", "caps"),
-                ("baiweiyi", "白惟一"),
-                ("mushroom", "🍄"),
-                ("xxts", "xxts"),
-                ("yume", "Yume"),
-                ("pika", "皮卡"),
-            ]
-        ],
-    }
+    return list_account_hints()
 
 
 # ── 元数据 / 名单（读公开，写需管理员）──────────────
@@ -277,13 +338,16 @@ def meta():
         "positionToLetter": POSITION_TO_LETTER,
         "storage": backend,
         "storagePersistent": backend == "postgres",
+        "auctionInProgress": auction.is_in_progress(),
+        "auctionPhase": auction.phase,
     }
 
 
 @app.get("/api/roster")
-def get_roster(_user: dict | None = Depends(get_optional_user)):
+def get_roster(user: dict = Depends(get_current_user)):
     entries = list_roster()
-    return entries_to_auction_data(entries)
+    data = entries_to_auction_data(entries)
+    return _mask_roster_funds(data, user.get("role") == "admin")
 
 
 @app.get("/api/roster/entries")
@@ -301,25 +365,32 @@ def get_one(entry_id: int, _user: dict = Depends(require_admin)):
 
 @app.post("/api/roster/entries")
 def create_one(payload: RosterPayload, _user: dict = Depends(require_admin)):
+    _require_idle_auction()
     data = payload.model_dump()
     entry = create_entry(data)
+    if entry["identity"] == "captain":
+        ensure_captain_user(entry["name"])
     load_auction_from_db()
     return entry
 
 
 @app.put("/api/roster/entries/{entry_id}")
 def update_one(entry_id: int, payload: RosterPayload, _user: dict = Depends(require_admin)):
+    _require_idle_auction()
     existing = get_entry(entry_id)
     if not existing:
         raise HTTPException(404, "记录不存在")
     data = {**existing, **payload.model_dump()}
     entry = update_entry(entry_id, data)
+    if entry and entry["identity"] == "captain":
+        ensure_captain_user(entry["name"])
     load_auction_from_db()
     return entry
 
 
 @app.delete("/api/roster/entries/{entry_id}")
 def remove_one(entry_id: int, _user: dict = Depends(require_admin)):
+    _require_idle_auction()
     if not delete_entry(entry_id):
         raise HTTPException(404, "记录不存在")
     load_auction_from_db()
@@ -328,6 +399,7 @@ def remove_one(entry_id: int, _user: dict = Depends(require_admin)):
 
 @app.post("/api/roster/reseed")
 def reset_roster(_user: dict = Depends(require_admin)):
+    _require_idle_auction()
     reseed()
     entries = list_roster()
     load_auction_from_db()
@@ -351,13 +423,13 @@ def auction_spectator():
 def auction_start(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.start()
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/begin")
 def auction_begin(_user: dict = Depends(require_admin)):
     auction.begin_pool_select()
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/select-pool")
@@ -368,13 +440,13 @@ def auction_select_pool(
     err = auction.select_next_pool(payload.pool)
     if err:
         raise HTTPException(400, err)
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/reveal-draw")
 def auction_reveal_draw(_user: dict = Depends(require_admin)):
     auction.reveal_draw()
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/hammer")
@@ -382,13 +454,13 @@ def auction_hammer(_user: dict = Depends(require_admin)):
     err = auction.hammer()
     if err:
         raise HTTPException(400, err)
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/confirm-winner")
 def auction_confirm_winner(_user: dict = Depends(require_admin)):
     auction.confirm_winner()
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/bid")
@@ -415,7 +487,7 @@ def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or
     )
     if err:
         raise HTTPException(400, err)
-    return auction_state_response(user)
+    return auction_state_response(user, persist=True)
 
 
 @app.post("/api/auction/settings")
@@ -424,13 +496,14 @@ def auction_settings(
     _user: dict = Depends(require_admin),
 ):
     auction.set_timing(payload.bidExtensionSeconds, payload.noBidTimeoutSeconds)
-    return auction_state_response(_user)
+    return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/reset")
 def auction_reset(_user: dict = Depends(require_admin)):
     load_auction_from_db()
-    auction.reset()
+    auction.reset_ceremony()
+    clear_auction_state()
     return auction_state_response(_user)
 
 

@@ -208,7 +208,7 @@ function posLabel(position: Position | null | undefined) {
                     :style="{ strokeDashoffset: `${326.7 * (1 - timerPct / 100)}` }"
                   />
                 </svg>
-                <div class="timer-text">
+                <div class="timer-text" aria-live="polite" aria-atomic="true">
                   <span class="timer-num">{{ secondsLeft.toFixed(1) }}</span>
                   <span class="timer-unit">秒</span>
                 </div>
