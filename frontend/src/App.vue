@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { computed, onMounted } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import AppBackground from './components/AppBackground.vue'
 import SoundToggle from './components/SoundToggle.vue'
 import { useAuth } from './stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const { init, user, isAdmin, logout, ready } = useAuth()
+
+const showGuestNav = computed(
+  () => !user.value && (route.name === 'spectator' || route.name === 'feedback'),
+)
 
 onMounted(init)
 
@@ -31,8 +36,12 @@ function onLogout() {
       <div class="nav-links">
         <RouterLink to="/" class="nav-link" active-class="active">选人仪式</RouterLink>
         <RouterLink to="/spectator" class="nav-link" active-class="active">观战大屏</RouterLink>
+        <RouterLink to="/feedback" class="nav-link" active-class="active">意见反馈</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="nav-link" active-class="active">
           名单管理
+        </RouterLink>
+        <RouterLink v-if="isAdmin" to="/admin/feedback" class="nav-link" active-class="active">
+          查看反馈
         </RouterLink>
       </div>
       <span class="spacer" />
@@ -41,6 +50,19 @@ function onLogout() {
         {{ user.displayName }}
       </span>
       <button class="btn-ghost btn-sm" @click="onLogout">退出</button>
+    </nav>
+    <nav v-else-if="showGuestNav" class="nav card fade-in guest-nav">
+      <RouterLink :to="route.name === 'feedback' ? '/feedback' : '/spectator'" class="nav-brand">
+        <img src="/logo.svg" alt="" class="nav-logo" />
+        <span class="nav-brand-text">
+          <strong>白菜杯</strong>
+          <small>{{ route.name === 'feedback' ? '意见反馈' : '观战大屏' }}</small>
+        </span>
+      </RouterLink>
+      <span class="spacer" />
+      <span class="guest-tag">游客模式</span>
+      <RouterLink v-if="route.name !== 'feedback'" to="/feedback" class="btn-ghost btn-sm">意见反馈</RouterLink>
+      <RouterLink to="/login" class="btn-ghost btn-sm">登录参赛</RouterLink>
     </nav>
     <main class="main">
       <RouterView />
@@ -161,6 +183,15 @@ function onLogout() {
 .btn-sm {
   padding: 0.35rem 0.75rem;
   font-size: 0.8125rem;
+}
+
+.guest-tag {
+  font-size: 0.8125rem;
+  color: #c084fc;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.25);
 }
 
 .main {

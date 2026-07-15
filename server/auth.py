@@ -80,12 +80,13 @@ async def get_current_user(
     user = get_user_by_id(int(data["sub"]))
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在")
-    token_sv = data.get("sv")
-    if token_sv is None or int(token_sv) != int(user.get("sessionVersion", 0)):
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "该账号已在其他地方登录，请重新登录",
-        )
+    if user["role"] != "admin":
+        token_sv = data.get("sv")
+        if token_sv is None or int(token_sv) != int(user.get("sessionVersion", 0)):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "该账号已在其他地方登录，请重新登录",
+            )
     return _user_payload(user)
 
 

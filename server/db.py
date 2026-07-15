@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS auction_state (
     state_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    author_name TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 """
 
 PG_SCHEMA = """
@@ -85,6 +93,14 @@ CREATE TABLE IF NOT EXISTS baicai_auction_state (
     state_json TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS baicai_feedback (
+    id SERIAL PRIMARY KEY,
+    author_name TEXT,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_baicai_feedback_created ON baicai_feedback(created_at);
 """
 
 
@@ -563,3 +579,70 @@ def update_user_password(user_id: int, password_hash: str) -> None:
             f"UPDATE {users} SET password_hash = ? WHERE id = ?",
             (password_hash, user_id),
         )
+
+
+def _feedback_table() -> str:
+    return "baicai_feedback" if DATABASE_URL else "feedback"
+
+
+def feedback_row_to_dict(row) -> dict[str, Any]:
+    created = row["created_at"]
+    if hasattr(created, "isoformat"):
+        created = created.isoformat()
+    return {
+        "id": row["id"],
+        "authorName": row["author_name"],
+        "content": row["content"],
+        "createdAt": created,
+    }
+
+
+def create_feedback(*, content: str, author_name: str | None = None) -> dict[str, Any]:
+    table = _feedback_table()
+    now = _now()
+    with connect() as conn:
+        if DATABASE_URL:
+            row = conn.execute(
+                f"""
+                INSERT INTO {table} (author_name, content, created_at)
+                VALUES (?, ?, ?)
+                RETURNING id
+                """,
+                (author_name, content, now),
+            ).fetchone()
+            fid = int(row["id"])
+        else:
+            cur = conn.execute(
+                f"""
+                INSERT INTO {table} (author_name, content, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (author_name, content, now),
+            )
+            fid = int(cur.lastrowid)
+    return get_feedback(fid)  # type: ignore
+
+
+def get_feedback(feedback_id: int) -> dict[str, Any] | None:
+    table = _feedback_table()
+    with connect() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {table} WHERE id = ?", (feedback_id,)
+        ).fetchone()
+    return feedback_row_to_dict(row) if row else None
+
+
+def list_feedback() -> list[dict[str, Any]]:
+    table = _feedback_table()
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM {table} ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+    return [feedback_row_to_dict(r) for r in rows]
+
+
+def delete_feedback(feedback_id: int) -> bool:
+    table = _feedback_table()
+    with connect() as conn:
+        cur = conn.execute(f"DELETE FROM {table} WHERE id = ?", (feedback_id,))
+    return cur.rowcount > 0

@@ -27,11 +27,14 @@ from db import (
     bump_user_session_version,
     clear_auction_state,
     create_entry,
+    create_feedback,
     delete_entry,
+    delete_feedback,
     get_entry,
     get_storage_backend,
     get_user_by_username,
     init_db,
+    list_feedback,
     list_roster,
     load_auction_state,
     save_auction_state,
@@ -115,6 +118,11 @@ class OpenBidPayload(BaseModel):
 class AuctionSettingsPayload(BaseModel):
     bidExtensionSeconds: int = Field(ge=5, le=300)
     noBidTimeoutSeconds: int = Field(ge=10, le=600)
+
+
+class FeedbackPayload(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+    authorName: str | None = Field(default=None, max_length=64)
 
 
 def entries_to_auction_data(entries: list[dict]) -> dict:
@@ -301,7 +309,10 @@ def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
     if not user:
         raise HTTPException(401, "用户不存在")
-    session_version = bump_user_session_version(user["id"])
+    if user["role"] == "captain":
+        session_version = bump_user_session_version(user["id"])
+    else:
+        session_version = int(user.get("sessionVersion", 0))
     token = create_token(user, session_version)
     return {
         "token": token,
@@ -402,6 +413,29 @@ def reset_roster(_user: dict = Depends(require_admin)):
     entries = list_roster()
     load_auction_from_db()
     return entries_to_auction_data(entries)
+
+
+# ── 用户反馈 ──────────────────────────────────────
+
+@app.post("/api/feedback")
+def submit_feedback(payload: FeedbackPayload):
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(400, "反馈内容不能为空")
+    author = (payload.authorName or "").strip() or None
+    return create_feedback(content=content, author_name=author)
+
+
+@app.get("/api/feedback")
+def get_feedback_list(_user: dict = Depends(require_admin)):
+    return list_feedback()
+
+
+@app.delete("/api/feedback/{feedback_id}")
+def remove_feedback(feedback_id: int, _user: dict = Depends(require_admin)):
+    if not delete_feedback(feedback_id):
+        raise HTTPException(404, "反馈不存在")
+    return {"ok": True}
 
 
 # ── 多人拍卖 ──────────────────────────────────────

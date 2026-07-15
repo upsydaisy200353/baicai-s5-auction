@@ -43,6 +43,12 @@ async function enterAs(username: string) {
     loadingAs.value = ''
   }
 }
+
+function enterAsGuest() {
+  void unlockAudio()
+  playSound('uiClick')
+  router.push('/spectator')
+}
 </script>
 
 <template>
@@ -83,6 +89,14 @@ async function enterAs(username: string) {
       <p v-if="kickedMsg" class="kicked">{{ kickedMsg }}</p>
       <p v-if="error" class="error">{{ error }}</p>
 
+      <div v-if="accounts" class="pick-section guest-section">
+        <p class="pick-label">游客</p>
+        <button type="button" class="role-btn guest-btn" :disabled="loading" @click="enterAsGuest">
+          进入观战大屏
+        </button>
+        <p class="guest-hint">无需账号，仅观看拍卖过程</p>
+      </div>
+
       <div v-if="accounts" class="pick-section">
         <p class="pick-label">管理员</p>
         <button
@@ -113,7 +127,10 @@ async function enterAs(username: string) {
 
       <p v-else-if="!error" class="loading-hint">加载身份列表…</p>
 
-      <p class="foot-note">现场演示模式 · 免密登录</p>
+      <p class="foot-note">
+        现场演示模式 · 免密登录 ·
+        <RouterLink to="/feedback" class="foot-link">意见反馈</RouterLink>
+      </p>
     </div>
   </div>
 </template>
@@ -307,6 +324,29 @@ async function enterAs(username: string) {
   box-shadow: 0 0 20px rgba(245, 197, 66, 0.15);
 }
 
+.guest-btn {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(56, 189, 248, 0.1));
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #d8b4fe;
+}
+
+.guest-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.28), rgba(56, 189, 248, 0.14));
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.15);
+}
+
+.guest-hint {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.guest-section {
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
 .cap-btns {
   display: flex;
   flex-wrap: wrap;
@@ -348,6 +388,15 @@ async function enterAs(username: string) {
   font-size: 0.72rem;
   color: var(--text-muted);
   text-align: center;
+}
+
+.foot-link {
+  color: var(--cabbage);
+  text-decoration: none;
+}
+
+.foot-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {
