@@ -19,10 +19,36 @@ export interface AccountsHint {
   captainCount?: number
 }
 
-export function login(username: string) {
+export interface AdminUserRow {
+  id: number
+  username: string
+  role: 'admin' | 'captain'
+  captainName: string | null
+  displayName: string
+}
+
+export function login(username: string, password: string) {
   return apiRequest<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username }),
+    body: JSON.stringify({ username, password }),
+  })
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiRequest<{ ok: boolean }>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+}
+
+export function fetchAdminUsers() {
+  return apiRequest<AdminUserRow[]>('/admin/users')
+}
+
+export function adminSetPassword(userId: number, newPassword: string) {
+  return apiRequest<{ ok: boolean; username: string }>(`/admin/users/${userId}/password`, {
+    method: 'PUT',
+    body: JSON.stringify({ newPassword }),
   })
 }
 

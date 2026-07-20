@@ -32,14 +32,16 @@ npm run dev             # http://localhost:5173
 
 ### 登录
 
-选择管理员或队长身份，**免密**一键进入。
+选择管理员或队长身份，**输入密码**进入。
 
 | 角色 | 用户名 |
 |------|--------|
-| 管理员 | `admin` |
-| 队长 | `langx` / `long` / `foxi` / `baozi` / …（见登录页列表） |
+| 管理员 | `admin`（默认密码 `baicai-admin`，可用 `AUCTION_ADMIN_PASSWORD` 覆盖） |
+| 队长 | `langx` / `long` / …（默认密码 `baicai-s5`，可用 `AUCTION_DEFAULT_CAPTAIN_PASSWORD` 覆盖） |
 
-首次启动会自动创建账号（`seed_users.py`）。新增队长时会自动创建对应登录账号。
+首次启动会自动创建账号。管理员可在「账号密码」页重置任意账号密码；部署后请尽快改密。
+
+游客仍可免登录进入观战大屏。
 
 环境变量 `AUCTION_JWT_SECRET` 用于 JWT 签名（生产环境请设置强密钥）。
 
@@ -72,6 +74,7 @@ npm run dev             # http://localhost:5173
 3. 配置环境变量：
    - `DATABASE_URL` — Neon PostgreSQL 连接串（**强烈建议**）
    - `AUCTION_JWT_SECRET` — 由 Blueprint 自动生成
+   - `AUCTION_ADMIN_PASSWORD` / `AUCTION_DEFAULT_CAPTAIN_PASSWORD` — 可选，初始默认密码
    - `CORS_ORIGINS` — 可选，默认含 localhost 与 onrender.com 域名
 
 在线地址：**https://baicai-s5-auction.onrender.com**

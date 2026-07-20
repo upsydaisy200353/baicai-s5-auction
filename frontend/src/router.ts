@@ -7,6 +7,7 @@ import FeedbackView from './views/FeedbackView.vue'
 import RosterAdmin from './views/RosterAdmin.vue'
 import SpectatorView from './views/SpectatorView.vue'
 import LoginView from './views/LoginView.vue'
+import UsersAdmin from './views/UsersAdmin.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -19,6 +20,12 @@ export const router = createRouter({
       path: '/admin',
       name: 'admin',
       component: RosterAdmin,
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
+      path: '/admin/users',
+      name: 'admin-users',
+      component: UsersAdmin,
       meta: { requiresAuth: true, requiresAdmin: true },
     },
     {

@@ -17,8 +17,10 @@ from pydantic import BaseModel, Field, model_validator
 from auth import (
     create_token,
     get_current_user,
+    hash_password,
     require_admin,
     require_captain_or_admin,
+    verify_password,
 )
 from auction_engine import auction
 from constants import POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER
@@ -32,16 +34,25 @@ from db import (
     delete_feedback,
     get_entry,
     get_storage_backend,
+    get_user_by_id,
     get_user_by_username,
     init_db,
     list_feedback,
     list_roster,
+    list_users,
     load_auction_state,
     save_auction_state,
     update_entry,
+    update_user_password,
 )
 from seed import reseed, seed_if_empty
-from seed_users import ensure_captain_user, list_account_hints, seed_users
+from seed_users import (
+    ensure_captain_user,
+    ensure_user_passwords,
+    list_account_hints,
+    seed_users,
+    sync_roster_captain_users,
+)
 
 _DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173,https://baicai-s5-auction.onrender.com"
 CORS_ORIGINS = [
@@ -78,6 +89,16 @@ app.add_middleware(
 
 class LoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class ChangePasswordPayload(BaseModel):
+    currentPassword: str = Field(min_length=1, max_length=128)
+    newPassword: str = Field(min_length=4, max_length=128)
+
+
+class AdminSetPasswordPayload(BaseModel):
+    newPassword: str = Field(min_length=4, max_length=128)
 
 
 class RosterPayload(BaseModel):
@@ -347,6 +368,8 @@ def _bootstrap_storage() -> None:
     print(f"Storage: {'PostgreSQL (DATABASE_URL)' if backend == 'postgres' else f'SQLite ({DB_PATH})'}")
     seed_if_empty()
     seed_users()
+    sync_roster_captain_users()
+    ensure_user_passwords()
     try:
         from assign_avatars import assign_player_avatars, ensure_avatar_db_paths
 
@@ -394,7 +417,9 @@ def load_auction_from_db() -> None:
 def login(payload: LoginPayload):
     user = get_user_by_username(payload.username.strip())
     if not user:
-        raise HTTPException(401, "用户不存在")
+        raise HTTPException(401, "用户名或密码错误")
+    if not verify_password(payload.password, user["passwordHash"]):
+        raise HTTPException(401, "用户名或密码错误")
     if user["role"] == "captain":
         session_version = bump_user_session_version(user["id"])
     else:
@@ -410,6 +435,51 @@ def login(payload: LoginPayload):
             "displayName": user.get("displayName"),
         },
     }
+
+
+@app.post("/api/auth/change-password")
+def change_password(
+    payload: ChangePasswordPayload,
+    user: dict = Depends(get_current_user),
+):
+    full = get_user_by_id(user["id"])
+    if not full:
+        raise HTTPException(404, "用户不存在")
+    if not verify_password(payload.currentPassword, full["passwordHash"]):
+        raise HTTPException(400, "当前密码不正确")
+    update_user_password(full["id"], hash_password(payload.newPassword))
+    if full["role"] == "captain":
+        bump_user_session_version(full["id"])
+    return {"ok": True}
+
+
+@app.get("/api/admin/users")
+def admin_list_users(_user: dict = Depends(require_admin)):
+    return [
+        {
+            "id": u["id"],
+            "username": u["username"],
+            "role": u["role"],
+            "captainName": u.get("captainName"),
+            "displayName": u.get("displayName"),
+        }
+        for u in list_users()
+    ]
+
+
+@app.put("/api/admin/users/{user_id}/password")
+def admin_set_password(
+    user_id: int,
+    payload: AdminSetPasswordPayload,
+    _user: dict = Depends(require_admin),
+):
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "用户不存在")
+    update_user_password(target["id"], hash_password(payload.newPassword))
+    if target["role"] == "captain":
+        bump_user_session_version(target["id"])
+    return {"ok": True, "username": target["username"]}
 
 
 @app.get("/api/auth/me")

@@ -29,8 +29,8 @@ export function useAuth() {
     }
   }
 
-  async function login(username: string) {
-    const res = await apiLogin(username)
+  async function login(username: string, password: string) {
+    const res = await apiLogin(username, password)
     setToken(res.token)
     state.user = res.user
     return res.user

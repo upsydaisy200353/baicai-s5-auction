@@ -10,10 +10,12 @@ const router = useRouter()
 const { login } = useAuth()
 
 const loading = ref(false)
-const loadingAs = ref('')
 const error = ref('')
 const kickedMsg = ref('')
 const accounts = ref<AccountsHint | null>(null)
+const selectedUsername = ref('')
+const selectedLabel = ref('')
+const password = ref('')
 
 onMounted(async () => {
   kickedMsg.value = consumeLogoutReason() ?? ''
@@ -25,22 +27,37 @@ onMounted(async () => {
   }
 })
 
-async function enterAs(username: string) {
+function pickIdentity(username: string, label: string) {
+  void unlockAudio()
+  playSound('uiClick')
+  selectedUsername.value = username
+  selectedLabel.value = label
+  password.value = ''
+  error.value = ''
+}
+
+async function submitLogin() {
+  if (!selectedUsername.value) {
+    error.value = '请先选择身份'
+    return
+  }
+  if (!password.value) {
+    error.value = '请输入密码'
+    return
+  }
   loading.value = true
-  loadingAs.value = username
   error.value = ''
   await unlockAudio()
   playSound('uiClick')
   try {
-    await login(username)
+    await login(selectedUsername.value, password.value)
     playSound('uiConfirm')
     router.replace('/')
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '进入失败'
+    error.value = e instanceof Error ? e.message : '登录失败'
     playSound('uiError')
   } finally {
     loading.value = false
-    loadingAs.value = ''
   }
 }
 
@@ -63,7 +80,7 @@ function enterAsGuest() {
         <p class="hero-desc">
           全员同时叫价 · 倒计时落槌 · 观战大屏
           <br />
-          选择身份即可进入，无需密码
+          选择身份并输入密码进入
         </p>
         <div class="hero-stats">
           <div class="stat">
@@ -84,7 +101,7 @@ function enterAsGuest() {
 
     <div class="login-card card fade-in fade-in-delay-1">
       <h2 class="card-title">进入仪式现场</h2>
-      <p class="card-sub">选择你的身份，一键进入</p>
+      <p class="card-sub">先选身份，再输入密码登录</p>
 
       <p v-if="kickedMsg" class="kicked">{{ kickedMsg }}</p>
       <p v-if="error" class="error">{{ error }}</p>
@@ -102,10 +119,11 @@ function enterAsGuest() {
         <button
           type="button"
           class="role-btn admin-btn"
+          :class="{ selected: selectedUsername === accounts.admin.username }"
           :disabled="loading"
-          @click="enterAs(accounts.admin.username)"
+          @click="pickIdentity(accounts.admin.username, accounts.admin.displayName)"
         >
-          {{ loadingAs === accounts.admin.username ? '进入中…' : accounts.admin.displayName }}
+          {{ accounts.admin.displayName }}
         </button>
       </div>
 
@@ -117,18 +135,47 @@ function enterAsGuest() {
             :key="c.username"
             type="button"
             class="cap-btn"
+            :class="{ selected: selectedUsername === c.username }"
             :disabled="loading"
-            @click="enterAs(c.username)"
+            @click="pickIdentity(c.username, c.displayName)"
           >
-            {{ loadingAs === c.username ? '…' : c.displayName }}
+            {{ c.displayName }}
           </button>
         </div>
       </div>
 
-      <p v-else-if="!error" class="loading-hint">加载身份列表…</p>
+      <form v-if="accounts && selectedUsername" class="password-form" @submit.prevent="submitLogin">
+        <label class="pw-label">
+          账号
+          <input
+            type="text"
+            :value="selectedUsername"
+            readonly
+            autocomplete="username"
+            class="username-filled"
+          />
+        </label>
+        <p class="selected-hint">身份：<strong>{{ selectedLabel }}</strong></p>
+        <label class="pw-label">
+          密码
+          <input
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="请输入密码"
+            :disabled="loading"
+            autofocus
+          />
+        </label>
+        <button type="submit" class="btn-primary login-submit" :disabled="loading">
+          {{ loading ? '登录中…' : '登录' }}
+        </button>
+      </form>
+
+      <p v-else-if="!error && !accounts" class="loading-hint">加载身份列表…</p>
 
       <p class="foot-note">
-        现场演示模式 · 免密登录 ·
+        密码由管理员分发 ·
         <RouterLink to="/feedback" class="foot-link">意见反馈</RouterLink>
       </p>
     </div>
@@ -319,7 +366,8 @@ function enterAsGuest() {
   color: var(--gold);
 }
 
-.admin-btn:hover:not(:disabled) {
+.admin-btn:hover:not(:disabled),
+.admin-btn.selected {
   background: linear-gradient(135deg, rgba(245, 197, 66, 0.3), rgba(245, 197, 66, 0.12));
   box-shadow: 0 0 20px rgba(245, 197, 66, 0.15);
 }
@@ -364,7 +412,8 @@ function enterAsGuest() {
   transition: all 0.18s ease;
 }
 
-.cap-btn:hover:not(:disabled) {
+.cap-btn:hover:not(:disabled),
+.cap-btn.selected {
   border-color: rgba(74, 222, 128, 0.35);
   color: var(--cabbage);
   background: var(--cabbage-dim);
@@ -374,6 +423,52 @@ function enterAsGuest() {
 .cap-btn:disabled {
   opacity: 0.55;
   cursor: wait;
+}
+
+.password-form {
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.selected-hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.selected-hint strong {
+  color: var(--cabbage);
+}
+
+.pw-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.pw-label input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+}
+
+.username-filled {
+  opacity: 0.9;
+  cursor: default;
+  color: var(--cabbage) !important;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 0.7rem 1rem;
 }
 
 .loading-hint {

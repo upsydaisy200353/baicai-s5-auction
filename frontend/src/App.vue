@@ -40,6 +40,9 @@ function onLogout() {
         <RouterLink v-if="isAdmin" to="/admin" class="nav-link" active-class="active">
           名单管理
         </RouterLink>
+        <RouterLink v-if="isAdmin" to="/admin/users" class="nav-link" active-class="active">
+          账号密码
+        </RouterLink>
         <RouterLink v-if="isAdmin" to="/admin/feedback" class="nav-link" active-class="active">
           查看反馈
         </RouterLink>
