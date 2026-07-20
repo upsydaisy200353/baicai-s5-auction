@@ -48,9 +48,6 @@ def default_captain_password() -> str:
     return os.environ.get("AUCTION_DEFAULT_CAPTAIN_PASSWORD", "baicai-s5")
 
 
-_OLD_ADMIN_DEFAULTS = ("baicai-admin",)
-
-
 def _password_hash_for_role(role: str) -> str:
     plain = default_admin_password() if role == "admin" else default_captain_password()
     return hash_password(plain)
@@ -127,8 +124,7 @@ def sync_roster_captain_users() -> None:
 
 
 def ensure_user_passwords() -> None:
-    """把仍为历史免密占位的账号升级为默认密码（已设真密码的不动）。
-    若管理员仍是旧默认密码 baicai-admin，则升级为当前默认 UDNB。"""
+    """升级免密占位账号；并强制将管理员密码同步为当前默认（UDNB）。"""
     init_db()
     upgraded = 0
     for user in list_users():
@@ -139,21 +135,13 @@ def ensure_user_passwords() -> None:
     if upgraded:
         print(f"Upgraded {upgraded} passwordless account(s) to default passwords")
 
+    # 管理员密码以配置为准，避免线上仍停留在旧默认（曾误为 baicai-s5）
     admin = next((u for u in list_users() if u["role"] == "admin"), None)
     if admin:
         desired = default_admin_password()
-        if any(verify_password(old, admin["passwordHash"]) for old in _OLD_ADMIN_DEFAULTS):
-            if not verify_password(desired, admin["passwordHash"]):
-                update_user_password(admin["id"], hash_password(desired))
-                print(f"Admin password migrated to configured default")
-        # 本地/新环境：若明确要求同步，也可用环境变量强制写入
-        elif os.environ.get("AUCTION_FORCE_ADMIN_PASSWORD", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        ):
+        if not verify_password(desired, admin["passwordHash"]):
             update_user_password(admin["id"], hash_password(desired))
-            print("Admin password force-synced from AUCTION_ADMIN_PASSWORD")
+            print(f"Admin password synced to configured default")
 
 
 def reseed_users() -> None:
