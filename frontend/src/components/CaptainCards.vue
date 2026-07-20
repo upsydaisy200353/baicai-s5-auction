@@ -55,6 +55,7 @@ function ownPosition(cap: Captain): Position {
         <div class="cap-meta">
           <span class="cap-name">{{ cap.name }}</span>
           <span class="badge badge-blue">实力 {{ cap.rating }}</span>
+          <span v-if="cap.tier" class="badge badge-gold">{{ cap.tier }}</span>
         </div>
       </div>
       <p class="own-pos" :style="{ color: POSITION_COLORS[ownPosition(cap)] }">

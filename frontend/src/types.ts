@@ -9,7 +9,8 @@ export interface Player {
   startPrice?: number
   originalStartPrice?: number
   buyoutPrice?: number
-  rating?: number
+  /** CSV 档位，如 UR / SSR+ / SR- */
+  rating?: string
   weight?: number
   position: Position
   avatar?: string | null
@@ -30,7 +31,8 @@ export interface RosterEntry {
   position: Position
   startPrice: number
   buyoutPrice: number | null
-  rating?: number
+  /** CSV 档位，如 UR / SSR+ / SR- */
+  rating?: string
   weight?: number
   funds: number | null
   avatar?: string | null
@@ -40,7 +42,10 @@ export interface RosterEntry {
 
 export interface Captain {
   name: string
+  /** 实力分（起拍/实力数字，用于排序展示） */
   rating: number
+  /** CSV 档位（可选） */
+  tier?: string
   funds: number
   team: string[]
   /** 表格中所处分区 A~E */

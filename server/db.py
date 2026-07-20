@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS roster (
     pool_letter TEXT NOT NULL CHECK(pool_letter IN ('A','B','C','D','E')),
     start_price INTEGER NOT NULL DEFAULT 0,
     buyout_price INTEGER,
-    rating INTEGER NOT NULL DEFAULT 0,
+    rating TEXT NOT NULL DEFAULT '',
     weight INTEGER NOT NULL DEFAULT 1,
     funds INTEGER,
     created_at TEXT NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS baicai_roster (
     pool_letter TEXT NOT NULL CHECK(pool_letter IN ('A','B','C','D','E')),
     start_price INTEGER NOT NULL DEFAULT 0,
     buyout_price INTEGER,
-    rating INTEGER NOT NULL DEFAULT 0,
+    rating TEXT NOT NULL DEFAULT '',
     weight INTEGER NOT NULL DEFAULT 1,
     funds INTEGER,
     avatar TEXT,
@@ -195,6 +195,25 @@ def _pg_has_column(conn, table: str, column: str) -> bool:
     return bool(row)
 
 
+def _pg_column_data_type(conn, table: str, column: str) -> str | None:
+    row = conn.execute(
+        """
+        SELECT data_type FROM information_schema.columns
+        WHERE table_name = ? AND column_name = ?
+        """,
+        (table, column),
+    ).fetchone()
+    if not row:
+        return None
+    return row["data_type"] if isinstance(row, dict) else row[0]
+
+
+def _coerce_rating(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 def migrate_db() -> None:
     roster = _roster_table()
     users = _users_table()
@@ -204,8 +223,16 @@ def migrate_db() -> None:
                 conn.execute(f"ALTER TABLE {roster} ADD COLUMN avatar TEXT")
             if not _pg_has_column(conn, roster, "rating"):
                 conn.execute(
-                    f"ALTER TABLE {roster} ADD COLUMN rating INTEGER NOT NULL DEFAULT 0"
+                    f"ALTER TABLE {roster} ADD COLUMN rating TEXT NOT NULL DEFAULT ''"
                 )
+            else:
+                dtype = (_pg_column_data_type(conn, roster, "rating") or "").lower()
+                if dtype in ("integer", "bigint", "smallint", "numeric", "double precision", "real"):
+                    conn.execute(
+                        f"ALTER TABLE {roster} ALTER COLUMN rating TYPE TEXT "
+                        f"USING COALESCE(rating::text, '')"
+                    )
+                    conn.execute(f"ALTER TABLE {roster} ALTER COLUMN rating SET DEFAULT ''")
             if not _pg_has_column(conn, roster, "weight"):
                 conn.execute(
                     f"ALTER TABLE {roster} ADD COLUMN weight INTEGER NOT NULL DEFAULT 1"
@@ -223,7 +250,7 @@ def migrate_db() -> None:
                 conn.execute("ALTER TABLE roster ADD COLUMN avatar TEXT")
             if "rating" not in cols:
                 conn.execute(
-                    "ALTER TABLE roster ADD COLUMN rating INTEGER NOT NULL DEFAULT 0"
+                    "ALTER TABLE roster ADD COLUMN rating TEXT NOT NULL DEFAULT ''"
                 )
             if "weight" not in cols:
                 conn.execute(
@@ -285,7 +312,7 @@ def row_to_dict(row) -> dict[str, Any]:
         "position": position,
         "startPrice": row["start_price"],
         "buyoutPrice": row["buyout_price"],
-        "rating": int(row["rating"]) if "rating" in keys and row["rating"] is not None else 0,
+        "rating": _coerce_rating(row["rating"]) if "rating" in keys else "",
         "weight": int(row["weight"]) if "weight" in keys and row["weight"] is not None else 1,
         "funds": row["funds"],
         "avatar": row["avatar"] if "avatar" in keys else None,
@@ -323,7 +350,7 @@ def next_sort_order(conn) -> int:
 def create_entry(data: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     roster = _roster_table()
-    rating = int(data.get("rating") or 0)
+    rating = _coerce_rating(data.get("rating"))
     weight = max(1, int(data.get("weight") or 1))
     with connect() as conn:
         sort_order = data.get("sortOrder") or next_sort_order(conn)
@@ -388,7 +415,7 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
     merged = {**existing, **data, "id": entry_id}
     now = _now()
     roster = _roster_table()
-    rating = int(merged.get("rating") or 0)
+    rating = _coerce_rating(merged.get("rating"))
     weight = max(1, int(merged.get("weight") or 1))
     with connect() as conn:
         conn.execute(

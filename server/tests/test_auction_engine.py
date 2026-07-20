@@ -16,7 +16,7 @@ def _player(
     *,
     start: int = 100,
     buyout: int = 500,
-    rating: int = 100,
+    rating: str = "UR",
     weight: int = 1,
 ):
     return {

@@ -45,7 +45,7 @@ from db import (
     update_entry,
     update_user_password,
 )
-from seed import reseed, seed_if_empty
+from seed import reseed, seed_if_empty, sync_roster_ratings_from_seed
 from seed_users import (
     ensure_captain_user,
     ensure_user_passwords,
@@ -111,7 +111,7 @@ class RosterPayload(BaseModel):
     position: Literal["Top", "Jungle", "Mid", "Bot", "Support"] | None = None
     startPrice: int = Field(ge=0, default=0)
     buyoutPrice: int | None = Field(default=None, ge=0)
-    rating: int = Field(ge=0, default=0)
+    rating: str = Field(default="", max_length=16)
     weight: int = Field(ge=1, default=1)
     funds: int | None = Field(default=None, ge=0)
     avatar: str | None = None
@@ -128,6 +128,7 @@ class RosterPayload(BaseModel):
             raise ValueError("队长必须填写竞拍资金 funds")
         if self.identity == "player" and self.weight < 1:
             raise ValueError("选手权重 weight 须 ≥ 1")
+        self.rating = (self.rating or "").strip().upper()
         return self
 
 
@@ -159,7 +160,9 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
             captains.append(
                 {
                     "name": e["name"],
-                    "rating": int(e.get("rating") or e["startPrice"] or 0),
+                    # 队长「实力」仍用起拍/实力分数字；CSV 评级存在 roster.rating 文本
+                    "rating": int(e.get("startPrice") or 0),
+                    "tier": str(e.get("rating") or ""),
                     "funds": e["funds"],
                     "poolLetter": e["poolLetter"],
                     "avatar": e.get("avatar"),
@@ -175,7 +178,7 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
                     "startPrice": start,
                     "originalStartPrice": start,
                     "buyoutPrice": e.get("buyoutPrice") or 0,
-                    "rating": int(e.get("rating") or 0),
+                    "rating": str(e.get("rating") or ""),
                     "weight": max(1, int(e.get("weight") or 1)),
                     "position": e["position"],
                     "avatar": e.get("avatar"),
@@ -363,11 +366,41 @@ def restore_auction_state() -> None:
         clear_auction_state()
 
 
+def _refresh_auction_ratings_from_roster() -> None:
+    """名单评级变更后，把内存拍卖状态里的选手评级一并刷新。"""
+    by_serial = {
+        e["serial"]: str(e.get("rating") or "")
+        for e in list_roster()
+        if e.get("identity") == "player" and e.get("serial")
+    }
+    by_name = {
+        e["name"]: str(e.get("rating") or "")
+        for e in list_roster()
+        if e.get("identity") == "captain"
+    }
+    for p in auction.players:
+        serial = p.get("serial")
+        if serial and serial in by_serial:
+            p["rating"] = by_serial[serial]
+    if auction.current_player and auction.current_player.get("serial") in by_serial:
+        auction.current_player["rating"] = by_serial[auction.current_player["serial"]]
+    for c in auction.captains:
+        name = c.get("name")
+        if name and name in by_name:
+            c["tier"] = by_name[name]
+
+
 def _bootstrap_storage() -> None:
     init_db()
     backend = get_storage_backend()
     print(f"Storage: {'PostgreSQL (DATABASE_URL)' if backend == 'postgres' else f'SQLite ({DB_PATH})'}")
     seed_if_empty()
+    try:
+        n = sync_roster_ratings_from_seed()
+        if n:
+            print(f"Synced text ratings for {n} roster entries")
+    except Exception as exc:
+        print(f"Rating sync skipped: {exc}")
     seed_users()
     sync_roster_captain_users()
     ensure_user_passwords()
@@ -380,6 +413,10 @@ def _bootstrap_storage() -> None:
         print(f"Avatar assignment skipped: {exc}")
     load_auction_from_db()
     restore_auction_state()
+    try:
+        _refresh_auction_ratings_from_roster()
+    except Exception as exc:
+        print(f"Auction rating refresh skipped: {exc}")
 
 
 async def _auction_tick_loop() -> None:

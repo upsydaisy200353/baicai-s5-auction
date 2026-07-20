@@ -41,7 +41,7 @@ const newPlayer = reactive({
   poolLetter: 'A' as PoolLetter,
   startPrice: 100,
   buyoutPrice: 300,
-  rating: 100,
+  rating: 'SSR',
   weight: 1,
   sortOrder: 999,
 })
@@ -50,6 +50,7 @@ const newCaptain = reactive({
   name: '',
   poolLetter: 'A' as PoolLetter,
   startPrice: 100,
+  rating: 'SSR',
   funds: 2500,
   sortOrder: 999,
 })
@@ -103,7 +104,7 @@ async function save(entry: RosterEntry) {
       poolLetter: entry.poolLetter,
       startPrice: entry.startPrice,
       buyoutPrice: entry.buyoutPrice,
-      rating: entry.rating ?? 0,
+      rating: entry.rating ?? '',
       weight: entry.weight ?? 1,
       funds: entry.funds,
     })
@@ -169,6 +170,7 @@ async function addCaptain() {
       poolLetter: newCaptain.poolLetter,
       startPrice: newCaptain.startPrice,
       buyoutPrice: null,
+      rating: newCaptain.rating,
       funds: newCaptain.funds,
     })
     entries.value.push(created)
@@ -265,7 +267,7 @@ async function resetDefault() {
           </label>
           <label>
             评级
-            <input v-model.number="newPlayer.rating" type="number" min="0" />
+            <input v-model="newPlayer.rating" placeholder="UR / SSR / SR+" />
           </label>
           <label>
             抽签权重
@@ -311,7 +313,7 @@ async function resetDefault() {
               </td>
               <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
               <td><input v-model.number="entry.buyoutPrice" type="number" class="input-sm" /></td>
-              <td><input v-model.number="entry.rating" type="number" class="input-sm" /></td>
+              <td><input v-model="entry.rating" class="input-sm" placeholder="SSR" /></td>
               <td><input v-model.number="entry.weight" type="number" class="input-sm" min="1" /></td>
               <td class="ops">
                 <button
@@ -351,6 +353,10 @@ async function resetDefault() {
             <input v-model.number="newCaptain.startPrice" type="number" min="0" />
           </label>
           <label>
+            评级
+            <input v-model="newCaptain.rating" placeholder="UR / SSR" />
+          </label>
+          <label>
             竞拍资金
             <input v-model.number="newCaptain.funds" type="number" min="0" />
           </label>
@@ -370,13 +376,14 @@ async function resetDefault() {
               <th>名称</th>
               <th>位置池</th>
               <th>实力分</th>
+              <th>评级</th>
               <th>竞拍资金</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="captains.length === 0">
-              <td colspan="6" class="empty">暂无队长</td>
+              <td colspan="7" class="empty">暂无队长</td>
             </tr>
             <tr v-for="entry in captains" :key="entry.id">
               <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
@@ -389,6 +396,7 @@ async function resetDefault() {
                 </select>
               </td>
               <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
+              <td><input v-model="entry.rating" class="input-sm" placeholder="SSR" /></td>
               <td><input v-model.number="entry.funds" type="number" class="input-sm" /></td>
               <td class="ops">
                 <button

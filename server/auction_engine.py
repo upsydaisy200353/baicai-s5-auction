@@ -198,7 +198,7 @@ class AuctionEngine:
             if "originalStartPrice" not in p or p.get("originalStartPrice") is None:
                 p["originalStartPrice"] = start
             p["startPrice"] = int(p.get("startPrice") or start)
-            p["rating"] = int(p.get("rating") or 0)
+            p["rating"] = str(p.get("rating") or "").strip()
             p["weight"] = _player_weight(p)
             p["sold"] = bool(p.get("sold", False))
             p["inUnsoldPool"] = bool(p.get("inUnsoldPool", False))
@@ -668,7 +668,7 @@ class AuctionEngine:
         pos = POSITION_NAMES[self.current_player["position"]]
         start = self._player_start_price()
         buyout = self._player_buyout_price()
-        rating = int(self.current_player.get("rating") or 0)
+        rating = str(self.current_player.get("rating") or "").strip()
         self.add_log(
             f"公开竞拍 — {self.current_player['serial']} {self.current_player['name']} · {pos}"
             + (f" · 评级 {rating}" if rating else ""),
