@@ -36,7 +36,7 @@ npm run dev             # http://localhost:5173
 
 | 角色 | 用户名 |
 |------|--------|
-| 管理员 | `admin`（默认密码 `baicai-admin`，可用 `AUCTION_ADMIN_PASSWORD` 覆盖） |
+| 管理员 | `admin`（默认密码 `UDNB`，可用 `AUCTION_ADMIN_PASSWORD` 覆盖） |
 | 队长 | `langx` / `long` / …（默认密码 `baicai-s5`，可用 `AUCTION_DEFAULT_CAPTAIN_PASSWORD` 覆盖） |
 
 首次启动会自动创建账号。管理员可在「账号密码」页重置任意账号密码；部署后请尽快改密。
