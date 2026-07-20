@@ -25,6 +25,7 @@ export interface AdminUserRow {
   role: 'admin' | 'captain'
   captainName: string | null
   displayName: string
+  passwordPlain?: string
 }
 
 export function login(username: string, password: string) {

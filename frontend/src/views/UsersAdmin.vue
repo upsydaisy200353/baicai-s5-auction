@@ -54,6 +54,7 @@ async function setUserPassword(u: AdminUserRow) {
     await adminSetPassword(u.id, pw)
     draftPasswords[u.id] = ''
     message.value = `已更新 ${u.displayName}（${u.username}）的密码`
+    await load()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '修改失败'
   } finally {
@@ -125,7 +126,7 @@ async function saveMyPassword() {
 
     <section class="card section">
       <h2 class="section-title">重置账号密码</h2>
-      <p class="hint">直接设置新密码，无需对方旧密码。队长改密后需重新登录。</p>
+      <p class="hint">直接设置新密码，无需对方旧密码。队长改密后需重新登录。列表仅含管理员与现任名单队长。</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -133,6 +134,7 @@ async function saveMyPassword() {
               <th>显示名</th>
               <th>用户名</th>
               <th>角色</th>
+              <th>当前密码</th>
               <th>新密码</th>
               <th>操作</th>
             </tr>
@@ -143,6 +145,9 @@ async function saveMyPassword() {
               <td><code>{{ u.username }}</code></td>
               <td>
                 <span class="role" :class="u.role">{{ u.role === 'admin' ? '管理员' : '队长' }}</span>
+              </td>
+              <td>
+                <code class="current-pw">{{ u.passwordPlain || '（未知）' }}</code>
               </td>
               <td>
                 <input
@@ -307,5 +312,11 @@ code {
 
 .pw-input {
   width: 140px;
+}
+
+.current-pw {
+  color: var(--gold);
+  font-size: 0.85rem;
+  user-select: all;
 }
 </style>

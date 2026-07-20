@@ -50,6 +50,7 @@ from seed_users import (
     ensure_captain_user,
     ensure_user_passwords,
     list_account_hints,
+    list_manageable_users,
     seed_users,
     sync_roster_captain_users,
 )
@@ -447,7 +448,9 @@ def change_password(
         raise HTTPException(404, "用户不存在")
     if not verify_password(payload.currentPassword, full["passwordHash"]):
         raise HTTPException(400, "当前密码不正确")
-    update_user_password(full["id"], hash_password(payload.newPassword))
+    update_user_password(
+        full["id"], hash_password(payload.newPassword), password_plain=payload.newPassword
+    )
     if full["role"] == "captain":
         bump_user_session_version(full["id"])
     return {"ok": True}
@@ -462,8 +465,9 @@ def admin_list_users(_user: dict = Depends(require_admin)):
             "role": u["role"],
             "captainName": u.get("captainName"),
             "displayName": u.get("displayName"),
+            "passwordPlain": u.get("passwordPlain") or "",
         }
-        for u in list_users()
+        for u in list_manageable_users()
     ]
 
 
@@ -476,10 +480,18 @@ def admin_set_password(
     target = get_user_by_id(user_id)
     if not target:
         raise HTTPException(404, "用户不存在")
-    update_user_password(target["id"], hash_password(payload.newPassword))
+    update_user_password(
+        target["id"],
+        hash_password(payload.newPassword),
+        password_plain=payload.newPassword,
+    )
     if target["role"] == "captain":
         bump_user_session_version(target["id"])
-    return {"ok": True, "username": target["username"]}
+    return {
+        "ok": True,
+        "username": target["username"],
+        "passwordPlain": payload.newPassword,
+    }
 
 
 @app.get("/api/auth/me")

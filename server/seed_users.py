@@ -19,6 +19,7 @@ from db import (
 
 # 历史免密占位口令；启动时会被换成真实默认密码
 _PLACEHOLDER_PLAIN = "__passwordless__"
+_OLD_CAPTAIN_DEFAULTS = ("baicai-s5",)
 
 ADMIN_USER = {
     "username": "admin",
@@ -45,12 +46,15 @@ def default_admin_password() -> str:
 
 
 def default_captain_password() -> str:
-    return os.environ.get("AUCTION_DEFAULT_CAPTAIN_PASSWORD", "baicai-s5")
+    return os.environ.get("AUCTION_DEFAULT_CAPTAIN_PASSWORD", "baicai")
+
+
+def _plain_for_role(role: str) -> str:
+    return default_admin_password() if role == "admin" else default_captain_password()
 
 
 def _password_hash_for_role(role: str) -> str:
-    plain = default_admin_password() if role == "admin" else default_captain_password()
-    return hash_password(plain)
+    return hash_password(_plain_for_role(role))
 
 
 def is_placeholder_password(stored: str) -> bool:
@@ -65,16 +69,22 @@ def _slug_username(name: str) -> str:
     return slug or f"captain_{abs(hash(name)) % 10000}"
 
 
+def _set_password(user_id: int, plain: str) -> None:
+    update_user_password(user_id, hash_password(plain), password_plain=plain)
+
+
 def ensure_captain_user(captain_name: str) -> dict | None:
     """名单新增队长时同步创建登录账号。"""
     existing = get_user_by_captain_name(captain_name)
     if existing:
         return existing
     username = _slug_username(captain_name)
+    plain = default_captain_password()
     return create_user(
         {
             "username": username,
-            "passwordHash": _password_hash_for_role("captain"),
+            "passwordHash": hash_password(plain),
+            "passwordPlain": plain,
             "role": "captain",
             "captainName": captain_name,
             "displayName": captain_name,
@@ -86,10 +96,12 @@ def seed_users() -> None:
     init_db()
     if count_users() > 0:
         return
+    admin_plain = default_admin_password()
     create_user(
         {
             "username": ADMIN_USER["username"],
-            "passwordHash": _password_hash_for_role("admin"),
+            "passwordHash": hash_password(admin_plain),
+            "passwordPlain": admin_plain,
             "role": "admin",
             "captainName": None,
             "displayName": ADMIN_USER["displayName"],
@@ -98,13 +110,15 @@ def seed_users() -> None:
     roster_captains = {
         e["name"] for e in list_roster() if e["identity"] == "captain"
     }
+    cap_plain = default_captain_password()
     for username, captain_name in CAPTAIN_ACCOUNTS:
         if captain_name not in roster_captains:
             continue
         create_user(
             {
                 "username": username,
-                "passwordHash": _password_hash_for_role("captain"),
+                "passwordHash": hash_password(cap_plain),
+                "passwordPlain": cap_plain,
                 "role": "captain",
                 "captainName": captain_name,
                 "displayName": captain_name,
@@ -123,25 +137,68 @@ def sync_roster_captain_users() -> None:
             ensure_captain_user(entry["name"])
 
 
-def ensure_user_passwords() -> None:
-    """升级免密占位账号；并强制将管理员密码同步为当前默认（UDNB）。"""
-    init_db()
-    upgraded = 0
-    for user in list_users():
-        if not is_placeholder_password(user["passwordHash"]):
+def _guess_plain(user: dict) -> str | None:
+    stored = user.get("passwordPlain")
+    if stored:
+        return stored
+    candidates = [
+        default_admin_password() if user["role"] == "admin" else default_captain_password(),
+        "baicai-s5",
+        "baicai-admin",
+        "UDNB",
+        "baicai",
+        _PLACEHOLDER_PLAIN,
+    ]
+    seen: set[str] = set()
+    for cand in candidates:
+        if cand in seen:
             continue
-        update_user_password(user["id"], _password_hash_for_role(user["role"]))
-        upgraded += 1
-    if upgraded:
-        print(f"Upgraded {upgraded} passwordless account(s) to default passwords")
+        seen.add(cand)
+        if verify_password(cand, user["passwordHash"]):
+            return None if cand == _PLACEHOLDER_PLAIN else cand
+    return None
 
-    # 管理员密码以配置为准，避免线上仍停留在旧默认（曾误为 baicai-s5）
-    admin = next((u for u in list_users() if u["role"] == "admin"), None)
-    if admin:
-        desired = default_admin_password()
-        if not verify_password(desired, admin["passwordHash"]):
-            update_user_password(admin["id"], hash_password(desired))
-            print(f"Admin password synced to configured default")
+
+def ensure_user_passwords() -> None:
+    """升级免密占位；同步管理员/队长默认密码；回填明文供管理页展示。"""
+    init_db()
+    admin_plain = default_admin_password()
+    cap_plain = default_captain_password()
+    upgraded = 0
+
+    for user in list_users():
+        role = user["role"]
+        desired = admin_plain if role == "admin" else cap_plain
+
+        if is_placeholder_password(user["passwordHash"]):
+            _set_password(user["id"], desired)
+            upgraded += 1
+            continue
+
+        # 管理员：强制同步到配置默认
+        if role == "admin" and not verify_password(desired, user["passwordHash"]):
+            _set_password(user["id"], desired)
+            print("Admin password synced to configured default")
+            continue
+
+        # 队长：统一同步到当前默认 baicai（杯赛现场统一口令）
+        if role == "captain" and not verify_password(desired, user["passwordHash"]):
+            _set_password(user["id"], desired)
+            upgraded += 1
+            continue
+        if role == "captain" and verify_password(desired, user["passwordHash"]):
+            if user.get("passwordPlain") != desired:
+                update_user_password(user["id"], user["passwordHash"], password_plain=desired)
+            continue
+
+        # 其它：尽量回填可识别的明文
+        if not user.get("passwordPlain"):
+            guessed = _guess_plain(user)
+            if guessed:
+                update_user_password(user["id"], user["passwordHash"], password_plain=guessed)
+
+    if upgraded:
+        print(f"Upgraded {upgraded} account password(s) to current defaults")
 
 
 def reseed_users() -> None:
@@ -185,6 +242,29 @@ def list_account_hints() -> dict:
     if not admin:
         admin = {"username": "admin", "displayName": "管理员", "role": "admin"}
     return {"admin": admin, "captains": captains, "captainCount": len(captains)}
+
+
+def list_manageable_users() -> list[dict]:
+    """管理页账号：管理员 + 现任名单队长。"""
+    users = list_users()
+    by_captain = {
+        u["captainName"]: u
+        for u in users
+        if u["role"] == "captain" and u.get("captainName")
+    }
+    result: list[dict] = []
+    for u in users:
+        if u["role"] == "admin":
+            result.append(u)
+    for entry in list_roster():
+        if entry.get("identity") != "captain":
+            continue
+        user = by_captain.get(entry["name"]) or ensure_captain_user(entry["name"])
+        if user:
+            # 重新取一遍以带上最新明文
+            refreshed = next((x for x in list_users() if x["id"] == user["id"]), user)
+            result.append(refreshed)
+    return result
 
 
 if __name__ == "__main__":

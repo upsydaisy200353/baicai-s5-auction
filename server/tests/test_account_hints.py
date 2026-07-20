@@ -14,15 +14,20 @@ client = TestClient(app)
 def test_account_hints_only_roster_captains():
     init_db()
     # 制造一个「旧队长」账号，但不在当前名单
-    create_user(
-        {
-            "username": "orphan_cap",
-            "passwordHash": hash_password("x"),
-            "role": "captain",
-            "captainName": "已淘汰队长",
-            "displayName": "已淘汰队长",
-        }
-    )
+    from db import get_user_by_username
+
+    orphan_name = "orphan_cap_test_hints"
+    if not get_user_by_username(orphan_name):
+        create_user(
+            {
+                "username": orphan_name,
+                "passwordHash": hash_password("x"),
+                "passwordPlain": "x",
+                "role": "captain",
+                "captainName": "已淘汰队长",
+                "displayName": "已淘汰队长",
+            }
+        )
     roster_names = {e["name"] for e in list_roster() if e["identity"] == "captain"}
     assert "已淘汰队长" not in roster_names
 

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
     captain_name TEXT,
     display_name TEXT NOT NULL,
     session_version INTEGER NOT NULL DEFAULT 0,
+    password_plain TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS baicai_users (
     captain_name TEXT,
     display_name TEXT NOT NULL,
     session_version INTEGER NOT NULL DEFAULT 0,
+    password_plain TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_baicai_users_username ON baicai_users(username);
@@ -213,6 +215,8 @@ def migrate_db() -> None:
                 conn.execute(
                     f"ALTER TABLE {users} ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
                 )
+            if not _pg_has_column(conn, users, "password_plain"):
+                conn.execute(f"ALTER TABLE {users} ADD COLUMN password_plain TEXT")
         else:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(roster)").fetchall()}
             if "avatar" not in cols:
@@ -233,6 +237,8 @@ def migrate_db() -> None:
                 conn.execute(
                     f"ALTER TABLE {users} ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
                 )
+            if "password_plain" not in user_cols:
+                conn.execute(f"ALTER TABLE {users} ADD COLUMN password_plain TEXT")
 
 
 @contextmanager
@@ -447,10 +453,12 @@ def user_row_to_dict(row) -> dict[str, Any]:
         created = created.isoformat()
     keys = row.keys() if hasattr(row, "keys") else []
     session_version = int(row["session_version"]) if "session_version" in keys else 0
+    password_plain = row["password_plain"] if "password_plain" in keys else None
     return {
         "id": row["id"],
         "username": row["username"],
         "passwordHash": row["password_hash"],
+        "passwordPlain": password_plain,
         "role": row["role"],
         "captainName": row["captain_name"],
         "displayName": row["display_name"],
@@ -485,13 +493,15 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
 def create_user(data: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     users = _users_table()
+    password_plain = data.get("passwordPlain")
     with connect() as conn:
         if DATABASE_URL:
             row = conn.execute(
                 f"""
                 INSERT INTO {users}
-                  (username, password_hash, role, captain_name, display_name, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (username, password_hash, role, captain_name, display_name,
+                   password_plain, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """,
                 (
@@ -500,6 +510,7 @@ def create_user(data: dict[str, Any]) -> dict[str, Any]:
                     data["role"],
                     data.get("captainName"),
                     data.get("displayName") or data["username"],
+                    password_plain,
                     now,
                 ),
             ).fetchone()
@@ -508,8 +519,9 @@ def create_user(data: dict[str, Any]) -> dict[str, Any]:
             cur = conn.execute(
                 f"""
                 INSERT INTO {users}
-                  (username, password_hash, role, captain_name, display_name, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (username, password_hash, role, captain_name, display_name,
+                   password_plain, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     data["username"],
@@ -517,6 +529,7 @@ def create_user(data: dict[str, Any]) -> dict[str, Any]:
                     data["role"],
                     data.get("captainName"),
                     data.get("displayName") or data["username"],
+                    password_plain,
                     now,
                 ),
             )
@@ -603,12 +616,14 @@ def bump_user_session_version(user_id: int) -> int:
     return int(row["session_version"])
 
 
-def update_user_password(user_id: int, password_hash: str) -> None:
+def update_user_password(
+    user_id: int, password_hash: str, password_plain: str | None = None
+) -> None:
     users = _users_table()
     with connect() as conn:
         conn.execute(
-            f"UPDATE {users} SET password_hash = ? WHERE id = ?",
-            (password_hash, user_id),
+            f"UPDATE {users} SET password_hash = ?, password_plain = ? WHERE id = ?",
+            (password_hash, password_plain, user_id),
         )
 
 
