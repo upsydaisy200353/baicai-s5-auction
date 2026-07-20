@@ -6,8 +6,7 @@ defineProps<{ phase: AuctionPhase }>()
 
 const stepPhaseMap: Record<string, AuctionPhase[]> = {
   intro: ['intro'],
-  pool_select: ['pool_select'],
-  pool_draw: ['pool_draw'],
+  pool_draw: ['pool_draw', 'pool_select'],
   open_bid: ['open_bid'],
   winner_reveal: ['winner_reveal', 'player_done'],
   finished: ['finished'],

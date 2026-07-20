@@ -24,6 +24,11 @@ export interface ServerAuctionState {
   lastResult: LastResult | null
   availablePools: Position[]
   auctionSettings?: AuctionSettings
+  captainAliases?: Record<string, string>
+  myAlias?: string | null
+  auctionStage?: 'main' | 'unsold'
+  unsoldPoolCount?: number
+  mainPoolCount?: number
 }
 
 export function fetchAuctionState() {
@@ -47,13 +52,6 @@ export function startAuction() {
 
 export function beginCeremony() {
   return apiRequest<ServerAuctionState>('/auction/begin', { method: 'POST' })
-}
-
-export function selectPool(pool: Position) {
-  return apiRequest<ServerAuctionState>('/auction/select-pool', {
-    method: 'POST',
-    body: JSON.stringify({ pool }),
-  })
 }
 
 export function revealDraw() {

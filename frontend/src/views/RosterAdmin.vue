@@ -41,6 +41,8 @@ const newPlayer = reactive({
   poolLetter: 'A' as PoolLetter,
   startPrice: 100,
   buyoutPrice: 300,
+  rating: 100,
+  weight: 1,
   sortOrder: 999,
 })
 
@@ -101,6 +103,8 @@ async function save(entry: RosterEntry) {
       poolLetter: entry.poolLetter,
       startPrice: entry.startPrice,
       buyoutPrice: entry.buyoutPrice,
+      rating: entry.rating ?? 0,
+      weight: entry.weight ?? 1,
       funds: entry.funds,
     })
     const idx = entries.value.findIndex((e) => e.id === entry.id)
@@ -138,6 +142,8 @@ async function addPlayer() {
       poolLetter: newPlayer.poolLetter,
       startPrice: newPlayer.startPrice,
       buyoutPrice: newPlayer.buyoutPrice,
+      rating: newPlayer.rating,
+      weight: newPlayer.weight,
       funds: null,
     })
     entries.value.push(created)
@@ -258,6 +264,14 @@ async function resetDefault() {
             <input v-model.number="newPlayer.buyoutPrice" type="number" min="0" />
           </label>
           <label>
+            评级
+            <input v-model.number="newPlayer.rating" type="number" min="0" />
+          </label>
+          <label>
+            抽签权重
+            <input v-model.number="newPlayer.weight" type="number" min="1" />
+          </label>
+          <label>
             排序
             <input v-model.number="newPlayer.sortOrder" type="number" min="1" />
           </label>
@@ -275,12 +289,14 @@ async function resetDefault() {
               <th>位置池</th>
               <th>起拍价</th>
               <th>一口价</th>
+              <th>评级</th>
+              <th>权重</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="players.length === 0">
-              <td colspan="7" class="empty">暂无选手</td>
+              <td colspan="9" class="empty">暂无选手</td>
             </tr>
             <tr v-for="entry in players" :key="entry.id">
               <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
@@ -295,6 +311,8 @@ async function resetDefault() {
               </td>
               <td><input v-model.number="entry.startPrice" type="number" class="input-sm" /></td>
               <td><input v-model.number="entry.buyoutPrice" type="number" class="input-sm" /></td>
+              <td><input v-model.number="entry.rating" type="number" class="input-sm" /></td>
+              <td><input v-model.number="entry.weight" type="number" class="input-sm" min="1" /></td>
               <td class="ops">
                 <button
                   class="btn-primary btn-sm"

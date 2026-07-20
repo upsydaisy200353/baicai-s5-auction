@@ -1,28 +1,26 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import PoolPickPanel from './PoolPickPanel.vue'
+import { ref, watch } from 'vue'
 import { phaseLabel } from '../auctionEngine'
 import { playSound, unlockAudio } from '../lib/soundEngine'
-import type { AuctionPhase, AuctionSettings, Position } from '../types'
+import type { AuctionPhase, AuctionSettings } from '../types'
 
 const props = defineProps<{
   phase: AuctionPhase
-  availablePools: Position[]
-  poolOrder: Position[]
   canHammer: boolean
   auctionSettings?: AuctionSettings
+  auctionStage?: 'main' | 'unsold'
+  unsoldPoolCount?: number
+  mainPoolCount?: number
 }>()
 
 const emit = defineEmits<{
-  selectPool: [pool: Position]
   hammer: []
   reset: []
   updateSettings: [settings: AuctionSettings]
 }>()
 
-const showPoolPick = computed(() => props.phase === 'pool_select')
 const showSettings = ref(false)
-const bidExtension = ref(45)
+const bidExtension = ref(30)
 const noBidTimeout = ref(60)
 
 watch(
@@ -62,6 +60,9 @@ function onReset() {
     <div class="bar-left">
       <span class="bar-label">管理员</span>
       <span class="phase-pill">{{ phaseLabel(phase) }}</span>
+      <span v-if="auctionStage === 'unsold'" class="stage-pill">流拍池重拍</span>
+      <span v-if="mainPoolCount != null" class="pool-stat">主池 {{ mainPoolCount }}</span>
+      <span v-if="unsoldPoolCount != null" class="pool-stat">流拍 {{ unsoldPoolCount }}</span>
     </div>
     <div class="bar-actions">
       <button class="btn-ghost" @click="showSettings = !showSettings">计时设置</button>
@@ -89,15 +90,8 @@ function onReset() {
       </label>
       <button class="btn-primary" @click="applySettings">保存</button>
     </div>
-    <p class="settings-hint">有人出价后，{{ bidExtension }}s 内无人继续加价则最高价者得；全程无人出价超过 {{ noBidTimeout }}s 则流拍。</p>
+    <p class="settings-hint">有人出价后，{{ bidExtension }}s 内无人继续加价则最高价者得；全程无人出价超过 {{ noBidTimeout }}s 则进入流拍池。</p>
   </div>
-
-  <PoolPickPanel
-    v-if="showPoolPick"
-    :available-pools="availablePools"
-    :pool-order="poolOrder"
-    @select="emit('selectPool', $event)"
-  />
 </template>
 
 <style scoped>
@@ -116,6 +110,7 @@ function onReset() {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .bar-label {
@@ -133,6 +128,19 @@ function onReset() {
   border-radius: 999px;
   background: rgba(168, 85, 247, 0.12);
   color: #c084fc;
+}
+
+.stage-pill {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.pool-stat {
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .bar-actions {

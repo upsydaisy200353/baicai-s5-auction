@@ -20,6 +20,7 @@ const props = defineProps<{
   openBid: OpenBidContext | null
   poolOrder: Position[]
   isAdmin?: boolean
+  auctionStage?: 'main' | 'unsold'
 }>()
 
 const secondsLeft = ref(0)
@@ -49,7 +50,7 @@ onUnmounted(() => {
 
 const timerPct = computed(() => {
   if (!props.openBid) return 0
-  const total = props.openBid.timeoutSeconds || 45
+  const total = props.openBid.timeoutSeconds || 30
   return Math.min(100, (secondsLeft.value / total) * 100)
 })
 
@@ -57,14 +58,17 @@ const timerLabel = computed(() => {
   if (!props.openBid) return ''
   return props.openBid.hasBids
     ? `${props.openBid.bidExtensionSeconds}s 内无人加价则落槌`
-    : `${props.openBid.noBidTimeoutSeconds}s 内无人出价则流拍`
+    : `${props.openBid.noBidTimeoutSeconds}s 内无人出价则进入流拍池`
 })
 
 const timerUrgent = computed(() => secondsLeft.value > 0 && secondsLeft.value <= 8)
 
 const captainAvatarMap = computed(() => {
   const map = new Map<string, string | null | undefined>()
-  for (const c of props.captains) map.set(c.name, c.avatar)
+  for (const c of props.captains) {
+    map.set(c.name, c.avatar)
+    if (c.alias) map.set(c.alias, c.avatar)
+  }
   return map
 })
 
@@ -188,6 +192,7 @@ function posLabel(position: Position | null | undefined) {
                 {{ posLabel(spotlightPlayer.position) }}
               </p>
               <div class="lot-prices">
+                <span v-if="spotlightPlayer.rating">评级 {{ spotlightPlayer.rating }}</span>
                 <span>起拍 {{ openBid?.startPrice ?? spotlightPlayer.startPrice }}w</span>
                 <span v-if="openBid?.buyoutPrice || spotlightPlayer.buyoutPrice">
                   一口价 {{ openBid?.buyoutPrice ?? spotlightPlayer.buyoutPrice }}w
@@ -243,24 +248,19 @@ function posLabel(position: Position | null | undefined) {
           </div>
         </template>
 
-        <template v-else-if="phase === 'pool_select'">
+        <template v-else-if="phase === 'pool_select' || (phase === 'player_done' && auctionStage)">
           <div class="waiting-state">
             <span class="wait-icon">🎯</span>
-            <h2>等待选择位置池</h2>
-            <p>管理员正在选择下一个拍卖位置…</p>
-            <div v-if="poolOrder.length" class="done-pools">
-              <span v-for="(p, i) in poolOrder" :key="p + i" class="done-chip">
-                {{ posLabel(p) }}
-              </span>
-            </div>
+            <h2>{{ auctionStage === 'unsold' ? '流拍池抽取中' : '全局抽取中' }}</h2>
+            <p>即将随机抽取下一位拍卖选手…</p>
           </div>
         </template>
 
         <template v-else-if="phase === 'pool_draw'">
           <div class="waiting-state purple">
             <span class="wait-icon">?</span>
-            <h2>抽取拍卖标的</h2>
-            <p>即将揭晓本池选手…</p>
+            <h2>{{ auctionStage === 'unsold' ? '流拍池抽取' : '全局抽取' }}</h2>
+            <p>即将揭晓本轮选手…</p>
           </div>
         </template>
 

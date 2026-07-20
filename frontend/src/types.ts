@@ -7,10 +7,15 @@ export interface Player {
   serial: string
   name: string
   startPrice?: number
+  originalStartPrice?: number
   buyoutPrice?: number
+  rating?: number
+  weight?: number
   position: Position
   avatar?: string | null
   sold: boolean
+  inUnsoldPool?: boolean
+  excluded?: boolean
   finalPrice: number | null
   winner: string | null
 }
@@ -25,6 +30,8 @@ export interface RosterEntry {
   position: Position
   startPrice: number
   buyoutPrice: number | null
+  rating?: number
+  weight?: number
   funds: number | null
   avatar?: string | null
   createdAt?: string
@@ -39,6 +46,7 @@ export interface Captain {
   /** 表格中所处分区 A~E */
   poolLetter: PoolLetter
   avatar?: string | null
+  alias?: string | null
 }
 
 export type RosterRow =
@@ -66,6 +74,7 @@ export interface LiveBidEntry {
 
 export interface CaptainBidRow {
   name: string
+  alias?: string | null
   funds: number | null
   latestBid: number | null
   isLeader: boolean
@@ -101,11 +110,13 @@ export interface OpenBidContext {
   secondsRemaining: number
   liveBids: LiveBidEntry[]
   captainRows: CaptainBidRow[]
+  captainAliases?: Record<string, string>
 }
 
 export interface LastResult {
   player: Player
   winner: string | null
+  winnerAlias?: string | null
   price: number | null
 }
 
@@ -130,4 +141,9 @@ export interface AuctionSnapshot {
   lastResult: LastResult | null
   availablePools?: Position[]
   auctionSettings?: AuctionSettings
+  captainAliases?: Record<string, string>
+  myAlias?: string | null
+  auctionStage?: 'main' | 'unsold'
+  unsoldPoolCount?: number
+  mainPoolCount?: number
 }

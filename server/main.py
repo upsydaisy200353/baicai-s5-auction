@@ -89,6 +89,8 @@ class RosterPayload(BaseModel):
     position: Literal["Top", "Jungle", "Mid", "Bot", "Support"] | None = None
     startPrice: int = Field(ge=0, default=0)
     buyoutPrice: int | None = Field(default=None, ge=0)
+    rating: int = Field(ge=0, default=0)
+    weight: int = Field(ge=1, default=1)
     funds: int | None = Field(default=None, ge=0)
     avatar: str | None = None
 
@@ -102,6 +104,8 @@ class RosterPayload(BaseModel):
             raise ValueError("poolLetter 或 position 必须提供其一")
         if self.identity == "captain" and self.funds is None:
             raise ValueError("队长必须填写竞拍资金 funds")
+        if self.identity == "player" and self.weight < 1:
+            raise ValueError("选手权重 weight 须 ≥ 1")
         return self
 
 
@@ -133,7 +137,7 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
             captains.append(
                 {
                     "name": e["name"],
-                    "rating": e["startPrice"],
+                    "rating": int(e.get("rating") or e["startPrice"] or 0),
                     "funds": e["funds"],
                     "poolLetter": e["poolLetter"],
                     "avatar": e.get("avatar"),
@@ -141,15 +145,21 @@ def entries_to_auction_data(entries: list[dict]) -> dict:
                 }
             )
         else:
+            start = e.get("startPrice") or 0
             players.append(
                 {
                     "serial": e["serial"] or "",
                     "name": e["name"],
-                    "startPrice": e.get("startPrice") or 0,
+                    "startPrice": start,
+                    "originalStartPrice": start,
                     "buyoutPrice": e.get("buyoutPrice") or 0,
+                    "rating": int(e.get("rating") or 0),
+                    "weight": max(1, int(e.get("weight") or 1)),
                     "position": e["position"],
                     "avatar": e.get("avatar"),
                     "sold": False,
+                    "inUnsoldPool": False,
+                    "excluded": False,
                     "finalPrice": None,
                     "winner": None,
                 }
@@ -226,11 +236,87 @@ def _mask_funds_for_viewer(state: dict, viewer_captain: str | None, is_admin: bo
     return state
 
 
+def _mask_captain_names_for_viewer(
+    state: dict, viewer_captain: str | None, is_admin: bool
+) -> dict:
+    """非管理员：出价/领先/成交公示用代号；队长可见本人 myAlias。
+    仪式结束揭晓阵容时恢复真名。"""
+    aliases: dict[str, str] = dict(state.get("captainAliases") or {})
+    open_bid = state.get("openBid")
+    if open_bid and open_bid.get("captainAliases"):
+        aliases.update(open_bid["captainAliases"])
+
+    def alias_of(name: str | None) -> str | None:
+        if not name:
+            return None
+        return aliases.get(name, name)
+
+    if viewer_captain:
+        state["myAlias"] = aliases.get(viewer_captain)
+    else:
+        state["myAlias"] = None
+
+    if is_admin:
+        state["captainAliasMap"] = aliases
+        return state
+
+    # 终场揭晓：显示真实队长名与阵容
+    if state.get("phase") == "finished":
+        state.pop("captainAliases", None)
+        return state
+
+    def rename_captain_obj(obj: dict | None) -> None:
+        if not obj or "name" not in obj:
+            return
+        real = obj["name"]
+        obj["realName"] = None
+        obj["alias"] = alias_of(real)
+        obj["name"] = alias_of(real) or real
+
+    # 队长列表：观众全部代号；队长本人保留真名，他人用代号
+    for c in state.get("captains", []):
+        real = c.get("name")
+        c["alias"] = alias_of(real)
+        if real != viewer_captain:
+            c["name"] = alias_of(real) or real
+
+    if open_bid:
+        if open_bid.get("currentLeader"):
+            open_bid["currentLeader"] = alias_of(open_bid["currentLeader"])
+        rename_captain_obj(open_bid.get("leaderCaptain"))
+        for bid in open_bid.get("liveBids", []):
+            bid["captain"] = alias_of(bid.get("captain")) or bid.get("captain")
+        for row in open_bid.get("captainRows", []):
+            real = row.get("name")
+            row["alias"] = alias_of(real)
+            if real != viewer_captain:
+                row["name"] = alias_of(real) or real
+        for c in open_bid.get("eligibleCaptains", []):
+            real = c.get("name")
+            c["alias"] = alias_of(real)
+            if real != viewer_captain:
+                c["name"] = alias_of(real) or real
+        open_bid.pop("captainAliases", None)
+
+    last = state.get("lastResult")
+    if last and last.get("winner"):
+        last["winnerAlias"] = alias_of(last["winner"])
+        last["winner"] = alias_of(last["winner"])
+
+    for p in state.get("players", []):
+        if p.get("winner"):
+            p["winner"] = alias_of(p["winner"])
+
+    state.pop("captainAliases", None)
+    return state
+
+
 def auction_state_response(user: dict | None = None, *, persist: bool = False) -> dict:
     state = enrich_auction_state(auction.to_state())
     is_admin = bool(user and user.get("role") == "admin")
     viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
     masked = _mask_funds_for_viewer(state, viewer_captain, is_admin)
+    masked = _mask_captain_names_for_viewer(masked, viewer_captain, is_admin)
     if persist or auction.is_in_progress():
         persist_auction_state()
     return masked
@@ -460,7 +546,7 @@ def auction_start(_user: dict = Depends(require_admin)):
 
 @app.post("/api/auction/begin")
 def auction_begin(_user: dict = Depends(require_admin)):
-    auction.begin_pool_select()
+    auction.begin_draw()
     return auction_state_response(_user, persist=True)
 
 

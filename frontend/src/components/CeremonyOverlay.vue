@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { POSITION_COLORS, POSITION_NAMES } from '../constants'
+import { POSITION_COLORS } from '../constants'
 import { playSound, unlockAudio } from '../lib/soundEngine'
 import PlayerAvatar from './PlayerAvatar.vue'
 import type { Captain, LastResult, Player, Position } from '../types'
@@ -106,11 +106,11 @@ onUnmounted(stopCarousel)
       <h2 class="overlay-title">公开叫价选人仪式</h2>
       <p class="overlay-desc">英式增价拍卖 · 全员同时叫价 · 倒计时落槌</p>
       <ul class="rule-list">
-        <li>管理员逐次选择位置池，每池随机抽出一名选手</li>
-        <li>所有队长<strong>同时</strong>公开叫价，价高者得</li>
-        <li>每次加价后重置 <strong>45 秒</strong>倒计时；无人继续加价则落槌</li>
+        <li>从全部可拍卖选手中按<strong>权重</strong>全局随机抽取</li>
+        <li>所有队长<strong>同时</strong>公开叫价，价高者得；队长彼此匿名</li>
+        <li>每次加价后重置 <strong>30 秒</strong>倒计时；无人继续加价则落槌</li>
         <li>每次加价至少 <strong>10w</strong>；支持一口价秒拍（每位队长整场仅一次）</li>
-        <li>若<strong>60 秒</strong>内尚无人出价则流拍（管理员可调整计时）</li>
+        <li>若<strong>60 秒</strong>内尚无人出价则进入流拍池，主池结束后以初始价 ×1.25 重拍</li>
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
       </ul>
       <div class="captain-preview">
@@ -128,7 +128,7 @@ onUnmounted(stopCarousel)
     <div class="overlay-bg draw-bg" aria-hidden="true" />
     <div class="draw-rays" aria-hidden="true" />
     <div class="overlay-card draw-card">
-      <p class="eyebrow">抽取拍卖标的</p>
+      <p class="eyebrow">全局抽取</p>
       <div class="slot-frame" :class="{ spinning }" :style="{ '--pool-color': poolColor }">
         <div v-if="currentCarouselPlayer" class="carousel-slot" :class="{ spinning }">
           <PlayerAvatar
@@ -142,11 +142,10 @@ onUnmounted(stopCarousel)
           <p class="carousel-serial">{{ currentCarouselPlayer.serial }}</p>
           <h2 class="carousel-name">{{ currentCarouselPlayer.name }}</h2>
         </div>
-        <p v-else class="carousel-empty">该池暂无候选选手</p>
+        <p v-else class="carousel-empty">暂无候选选手</p>
       </div>
       <p class="overlay-desc">
-        从 <strong>{{ POSITION_NAMES[currentPool!] }}</strong> 池
-        {{ drawCandidates.length }} 名候选中抽取标的…
+        从 {{ drawCandidates.length }} 名候选中按权重抽取标的…
       </p>
       <div class="draw-dots">
         <span v-for="n in 3" :key="n" class="dot" :style="{ animationDelay: `${n * 0.2}s` }" />
@@ -171,10 +170,10 @@ onUnmounted(stopCarousel)
       />
       <p class="eyebrow">{{ lastResult.winner ? '落槌成交' : '流拍' }}</p>
       <h2 v-if="lastResult.winner" class="overlay-title winner-announce">
-        由 <span class="winner-cap">{{ lastResult.winner }}</span> 队长拍得
+        由 <span class="winner-cap">{{ lastResult.winnerAlias || lastResult.winner }}</span> 队长拍得
         <span class="winner-player">{{ lastResult.player.name }}</span>
       </h2>
-      <h2 v-else class="overlay-title">{{ lastResult.player.name }}</h2>
+      <h2 v-else class="overlay-title">{{ lastResult.player.name }} 进入流拍池</h2>
       <p v-if="lastResult.winner" class="winner-price-line">{{ lastResult.price }}w</p>
       <p v-else class="overlay-desc">本轮无人拍下</p>
       <button v-if="isAdmin" class="btn-primary ceremony-btn" @click="onConfirmWinner">

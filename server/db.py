@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS roster (
     pool_letter TEXT NOT NULL CHECK(pool_letter IN ('A','B','C','D','E')),
     start_price INTEGER NOT NULL DEFAULT 0,
     buyout_price INTEGER,
+    rating INTEGER NOT NULL DEFAULT 0,
+    weight INTEGER NOT NULL DEFAULT 1,
     funds INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -69,6 +71,8 @@ CREATE TABLE IF NOT EXISTS baicai_roster (
     pool_letter TEXT NOT NULL CHECK(pool_letter IN ('A','B','C','D','E')),
     start_price INTEGER NOT NULL DEFAULT 0,
     buyout_price INTEGER,
+    rating INTEGER NOT NULL DEFAULT 0,
+    weight INTEGER NOT NULL DEFAULT 1,
     funds INTEGER,
     avatar TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -178,29 +182,34 @@ def init_db() -> None:
     migrate_db()
 
 
+def _pg_has_column(conn, table: str, column: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = ? AND column_name = ?
+        """,
+        (table, column),
+    ).fetchone()
+    return bool(row)
+
+
 def migrate_db() -> None:
     roster = _roster_table()
     users = _users_table()
     with connect() as conn:
         if DATABASE_URL:
-            row = conn.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = ? AND column_name = 'avatar'
-                """,
-                (roster,),
-            ).fetchone()
-            if not row:
+            if not _pg_has_column(conn, roster, "avatar"):
                 conn.execute(f"ALTER TABLE {roster} ADD COLUMN avatar TEXT")
+            if not _pg_has_column(conn, roster, "rating"):
+                conn.execute(
+                    f"ALTER TABLE {roster} ADD COLUMN rating INTEGER NOT NULL DEFAULT 0"
+                )
+            if not _pg_has_column(conn, roster, "weight"):
+                conn.execute(
+                    f"ALTER TABLE {roster} ADD COLUMN weight INTEGER NOT NULL DEFAULT 1"
+                )
 
-            sv_row = conn.execute(
-                """
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = ? AND column_name = 'session_version'
-                """,
-                (users,),
-            ).fetchone()
-            if not sv_row:
+            if not _pg_has_column(conn, users, "session_version"):
                 conn.execute(
                     f"ALTER TABLE {users} ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
                 )
@@ -208,6 +217,14 @@ def migrate_db() -> None:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(roster)").fetchall()}
             if "avatar" not in cols:
                 conn.execute("ALTER TABLE roster ADD COLUMN avatar TEXT")
+            if "rating" not in cols:
+                conn.execute(
+                    "ALTER TABLE roster ADD COLUMN rating INTEGER NOT NULL DEFAULT 0"
+                )
+            if "weight" not in cols:
+                conn.execute(
+                    "ALTER TABLE roster ADD COLUMN weight INTEGER NOT NULL DEFAULT 1"
+                )
 
             user_cols = {
                 row[1] for row in conn.execute(f"PRAGMA table_info({users})").fetchall()
@@ -262,6 +279,8 @@ def row_to_dict(row) -> dict[str, Any]:
         "position": position,
         "startPrice": row["start_price"],
         "buyoutPrice": row["buyout_price"],
+        "rating": int(row["rating"]) if "rating" in keys and row["rating"] is not None else 0,
+        "weight": int(row["weight"]) if "weight" in keys and row["weight"] is not None else 1,
         "funds": row["funds"],
         "avatar": row["avatar"] if "avatar" in keys else None,
         "createdAt": created,
@@ -298,6 +317,8 @@ def next_sort_order(conn) -> int:
 def create_entry(data: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     roster = _roster_table()
+    rating = int(data.get("rating") or 0)
+    weight = max(1, int(data.get("weight") or 1))
     with connect() as conn:
         sort_order = data.get("sortOrder") or next_sort_order(conn)
         if DATABASE_URL:
@@ -305,8 +326,8 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
                 f"""
                 INSERT INTO {roster}
                   (sort_order, identity, serial, name, pool_letter,
-                   start_price, buyout_price, funds, avatar, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   start_price, buyout_price, rating, weight, funds, avatar, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """,
                 (
@@ -317,6 +338,8 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
                     data["poolLetter"],
                     data.get("startPrice", 0),
                     data.get("buyoutPrice"),
+                    rating,
+                    weight,
                     data.get("funds"),
                     data.get("avatar"),
                     now,
@@ -329,8 +352,8 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
                 f"""
                 INSERT INTO {roster}
                   (sort_order, identity, serial, name, pool_letter,
-                   start_price, buyout_price, funds, avatar, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   start_price, buyout_price, rating, weight, funds, avatar, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sort_order,
@@ -340,6 +363,8 @@ def create_entry(data: dict[str, Any]) -> dict[str, Any]:
                     data["poolLetter"],
                     data.get("startPrice", 0),
                     data.get("buyoutPrice"),
+                    rating,
+                    weight,
                     data.get("funds"),
                     data.get("avatar"),
                     now,
@@ -357,6 +382,8 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
     merged = {**existing, **data, "id": entry_id}
     now = _now()
     roster = _roster_table()
+    rating = int(merged.get("rating") or 0)
+    weight = max(1, int(merged.get("weight") or 1))
     with connect() as conn:
         conn.execute(
             f"""
@@ -368,6 +395,8 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
               pool_letter = ?,
               start_price = ?,
               buyout_price = ?,
+              rating = ?,
+              weight = ?,
               funds = ?,
               avatar = ?,
               updated_at = ?
@@ -381,6 +410,8 @@ def update_entry(entry_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
                 merged["poolLetter"],
                 merged["startPrice"],
                 merged.get("buyoutPrice"),
+                rating,
+                weight,
                 merged.get("funds"),
                 merged.get("avatar"),
                 now,

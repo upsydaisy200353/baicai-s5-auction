@@ -16,14 +16,14 @@ ADMIN_USER = {
 }
 
 CAPTAIN_ACCOUNTS = [
-    ("wuyanzu", "吴彦祖"),
-    ("yazi", "亚子"),
-    ("caps", "caps"),
-    ("baiweiyi", "白惟一"),
-    ("mushroom", "🍄"),
+    ("langx", "暂别langx"),
+    ("long", "龙"),
+    ("foxi", "佛系"),
+    ("baozi", "baozi"),
+    ("jiebao", "杰宝大王"),
     ("xxts", "xxts"),
-    ("yume", "Yume"),
-    ("pika", "皮卡"),
+    ("cinderella", "辛德瑞拉"),
+    ("kun", "坤"),
 ]
 
 CAPTAIN_NAME_TO_USERNAME = {name: username for username, name in CAPTAIN_ACCOUNTS}

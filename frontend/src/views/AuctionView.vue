@@ -7,7 +7,6 @@ import {
   hammerAuction,
   resetAuction as apiResetAuction,
   revealDraw,
-  selectPool,
   startAuction,
   submitOpenBid,
   updateAuctionSettings,
@@ -22,7 +21,6 @@ import SpectatorBoard from '../components/SpectatorBoard.vue'
 import { useAuctionSounds } from '../composables/useAuctionSounds'
 import { playSound, unlockAudio } from '../lib/soundEngine'
 import { useAuth } from '../stores/auth'
-import type { Position } from '../types'
 
 const { isAdmin, isCaptain, captainName, user } = useAuth()
 
@@ -128,10 +126,6 @@ async function onBegin() {
   await runAction(beginCeremony)
 }
 
-async function onSelectPool(pool: Position) {
-  await runAction(() => selectPool(pool))
-}
-
 async function onRevealDraw() {
   await runAction(revealDraw)
 }
@@ -234,15 +228,19 @@ async function onBuyout() {
         <AdminCeremonyBar
           v-if="isAdmin && !overlayPhases.includes(state.phase)"
           :phase="state.phase"
-          :available-pools="state.availablePools"
-          :pool-order="state.poolOrder"
           :can-hammer="canHammer"
           :auction-settings="state.auctionSettings"
-          @select-pool="onSelectPool"
+          :auction-stage="state.auctionStage"
+          :unsold-pool-count="state.unsoldPoolCount"
+          :main-pool-count="state.mainPoolCount"
           @hammer="onHammer"
           @reset="onReset"
           @update-settings="onUpdateSettings"
         />
+
+        <p v-if="state.myAlias && state.phase === 'open_bid'" class="alias-banner">
+          本轮代号：<strong>{{ state.myAlias }}</strong>
+        </p>
 
         <SpectatorBoard
           :phase="state.phase"
@@ -252,6 +250,7 @@ async function onBuyout() {
           :open-bid="state.openBid"
           :pool-order="state.poolOrder"
           :is-admin="isAdmin"
+          :auction-stage="state.auctionStage"
         >
           <template v-if="state.phase === 'open_bid'" #bidPanel>
             <div v-if="isAdmin" class="proxy-row">
@@ -432,5 +431,20 @@ async function onBuyout() {
   font-size: 0.8125rem;
   color: var(--text-muted);
   margin-bottom: 0.5rem;
+}
+
+.alias-banner {
+  margin-bottom: 0.85rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 197, 66, 0.1);
+  border: 1px solid rgba(245, 197, 66, 0.25);
+  color: var(--gold);
+  font-size: 0.875rem;
+}
+
+.alias-banner strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
 }
 </style>
