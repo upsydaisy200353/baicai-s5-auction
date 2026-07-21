@@ -12,7 +12,7 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from db import get_user_by_id, get_user_by_username
+from db import get_user_by_id, get_user_by_username, update_user_online
 
 JWT_SECRET = os.environ.get("AUCTION_JWT_SECRET", "baicai-s5-dev-secret-change-me")
 JWT_ALG = "HS256"
@@ -87,6 +87,7 @@ async def get_current_user(
                 status.HTTP_401_UNAUTHORIZED,
                 "该账号已在其他地方登录，请重新登录",
             )
+    update_user_online(int(data["sub"]), True)
     return _user_payload(user)
 
 

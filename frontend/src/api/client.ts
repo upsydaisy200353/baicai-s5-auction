@@ -47,11 +47,11 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
   if (!res.ok) {
     let msg = res.statusText
+    const text = await res.text()
     try {
-      const body = await res.json()
+      const body = JSON.parse(text)
       msg = body.detail || body.message || msg
     } catch {
-      const text = await res.text()
       if (text) msg = text
     }
     throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg))

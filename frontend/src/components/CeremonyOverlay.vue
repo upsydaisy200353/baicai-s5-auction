@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { POSITION_COLORS } from '../constants'
+import { POSITION_COLORS, POSITION_SHORT } from '../constants'
 import { playSound, unlockAudio } from '../lib/soundEngine'
+import { buildCaptainRosterSlots } from '../rosterUtils'
 import PlayerAvatar from './PlayerAvatar.vue'
 import type { Captain, LastResult, Player, Position } from '../types'
 
 const props = defineProps<{
   phase: string
   captains: Captain[]
+  players?: Player[]
   currentPool: Position | null
   poolOrder: Position[]
   drawCandidates: Player[]
+  pendingPick: Player | null
   lastResult: LastResult | null
   isAdmin?: boolean
 }>()
@@ -20,11 +23,16 @@ const emit = defineEmits<{
   revealDraw: []
   confirmWinner: []
   drawTick: []
+  reset: []
 }>()
 
 const carouselIndex = ref(0)
 const spinning = ref(false)
+const revealing = ref(false)
+const hasDrawn = ref(false)
+const finaleDismissed = ref(false)
 let spinTimer: ReturnType<typeof setInterval> | null = null
+let revealTimer: ReturnType<typeof setTimeout> | null = null
 
 const currentCarouselPlayer = computed(() => {
   const list = props.drawCandidates
@@ -36,6 +44,20 @@ const poolColor = computed(() =>
   props.currentPool ? POSITION_COLORS[props.currentPool] : 'var(--purple)',
 )
 
+const finaleRosters = computed(() =>
+  props.captains.map((cap) => ({
+    cap,
+    slots: buildCaptainRosterSlots(cap, props.players ?? []),
+  })),
+)
+
+watch(
+  () => props.phase,
+  (phase) => {
+    if (phase === 'finished') finaleDismissed.value = false
+  },
+)
+
 function startCarousel() {
   const list = props.drawCandidates
   if (!list.length) {
@@ -44,7 +66,10 @@ function startCarousel() {
   }
 
   stopCarousel()
+  stopReveal()
   spinning.value = true
+  revealing.value = false
+  hasDrawn.value = false
   carouselIndex.value = 0
   let tick = 0
   const totalTicks = 28
@@ -55,7 +80,7 @@ function startCarousel() {
     if (tick % 4 === 0) emit('drawTick')
     if (tick >= totalTicks) {
       stopCarousel()
-      if (props.isAdmin) emit('revealDraw')
+      startReveal()
     }
   }, 80)
 }
@@ -64,6 +89,27 @@ function stopCarousel() {
   if (spinTimer) clearInterval(spinTimer)
   spinTimer = null
   spinning.value = false
+}
+
+function startReveal() {
+  revealing.value = true
+  hasDrawn.value = true
+  if (props.pendingPick) {
+    const idx = props.drawCandidates.findIndex((p) => p.name === props.pendingPick?.name)
+    if (idx >= 0) {
+      carouselIndex.value = idx
+    }
+  }
+  revealTimer = setTimeout(() => {
+    stopReveal()
+    if (props.isAdmin) emit('revealDraw')
+  }, 8000)
+}
+
+function stopReveal() {
+  if (revealTimer) clearTimeout(revealTimer)
+  revealTimer = null
+  revealing.value = false
 }
 
 function onBegin() {
@@ -78,15 +124,27 @@ function onConfirmWinner() {
   emit('confirmWinner')
 }
 
+function onDismissFinale() {
+  void unlockAudio()
+  playSound('uiClick')
+  if (props.isAdmin) {
+    emit('reset')
+    return
+  }
+  finaleDismissed.value = true
+}
+
 watch(
   () => [props.phase, props.drawCandidates.length] as const,
   ([phase]) => {
     if (phase === 'pool_draw') {
-      if (!spinning.value && !spinTimer) {
+      if (!spinning.value && !spinTimer && !hasDrawn.value) {
         setTimeout(startCarousel, 400)
       }
     } else {
       stopCarousel()
+      stopReveal()
+      hasDrawn.value = false
       carouselIndex.value = 0
     }
   },
@@ -126,11 +184,11 @@ onUnmounted(stopCarousel)
   <!-- 抽取标的 -->
   <div v-else-if="phase === 'pool_draw'" class="overlay draw">
     <div class="overlay-bg draw-bg" aria-hidden="true" />
-    <div class="draw-rays" aria-hidden="true" />
+    <div class="draw-rays" :class="{ pause: revealing }" aria-hidden="true" />
     <div class="overlay-card draw-card">
       <p class="eyebrow">全局抽取</p>
-      <div class="slot-frame" :class="{ spinning }" :style="{ '--pool-color': poolColor }">
-        <div v-if="currentCarouselPlayer" class="carousel-slot" :class="{ spinning }">
+      <div class="slot-frame" :class="{ spinning, revealing }" :style="{ '--pool-color': poolColor }">
+        <div v-if="currentCarouselPlayer" class="carousel-slot" :class="{ spinning, revealing }">
           <PlayerAvatar
             :name="currentCarouselPlayer.name"
             :serial="currentCarouselPlayer.serial"
@@ -145,10 +203,10 @@ onUnmounted(stopCarousel)
         <p v-else class="carousel-empty">暂无候选选手</p>
       </div>
       <p class="overlay-desc">
-        从 {{ drawCandidates.length }} 名候选中按权重抽取标的…
+        {{ revealing ? `抽中：${currentCarouselPlayer?.name}！` : `从 ${drawCandidates.length} 名候选中按权重抽取标的…` }}
       </p>
       <div class="draw-dots">
-        <span v-for="n in 3" :key="n" class="dot" :style="{ animationDelay: `${n * 0.2}s` }" />
+        <span v-for="n in 3" :key="n" class="dot" :class="{ pulse: revealing }" :style="{ animationDelay: `${n * 0.2}s` }" />
       </div>
     </div>
   </div>
@@ -183,21 +241,67 @@ onUnmounted(stopCarousel)
   </div>
 
   <!-- 最终阵容 -->
-  <div v-else-if="phase === 'finished'" class="overlay finale">
+  <div v-else-if="phase === 'finished' && !finaleDismissed" class="overlay finale">
     <div class="overlay-bg" aria-hidden="true" />
-    <div class="overlay-card wide">
+    <div class="overlay-card wide finale-card">
+      <button
+        type="button"
+        class="finale-close"
+        :title="isAdmin ? '结束仪式并返回大厅' : '关闭'"
+        :aria-label="isAdmin ? '结束仪式并返回大厅' : '关闭'"
+        @click="onDismissFinale"
+      >
+        ×
+      </button>
       <p class="eyebrow">仪式圆满落幕</p>
       <h2 class="overlay-title">最终阵容</h2>
       <div class="roster-grid">
-        <div v-for="cap in captains" :key="cap.name" class="roster-card">
+        <div v-for="{ cap, slots } in finaleRosters" :key="cap.name" class="roster-card">
           <div class="roster-cap">{{ cap.name }}</div>
           <div class="roster-funds">剩余 {{ cap.funds }}w</div>
-          <ul v-if="cap.team.length" class="roster-team">
-            <li v-for="t in cap.team" :key="t">{{ t }}</li>
-          </ul>
-          <p v-else class="roster-empty">未签下选手</p>
+          <table class="roster-table">
+            <thead>
+              <tr>
+                <th scope="col">位置</th>
+                <th scope="col">选手</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="slot in slots" :key="slot.position">
+                <th
+                  scope="row"
+                  class="pos-cell"
+                  :style="{ color: POSITION_COLORS[slot.position] }"
+                >
+                  {{ POSITION_SHORT[slot.position] }}
+                </th>
+                <td class="name-cell">
+                  <template v-if="slot.name">
+                    <span class="slot-name">{{ slot.name }}</span>
+                    <span v-if="slot.isCaptain" class="slot-tag">队长</span>
+                    <span v-else-if="slot.price != null" class="slot-price">{{ slot.price }}w</span>
+                  </template>
+                  <span v-else class="slot-empty">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
+      <button
+        v-if="isAdmin"
+        class="btn-primary ceremony-btn finale-btn"
+        @click="onDismissFinale"
+      >
+        结束仪式，返回大厅
+      </button>
+      <button
+        v-else
+        class="btn-ghost ceremony-btn finale-btn"
+        @click="onDismissFinale"
+      >
+        关闭
+      </button>
     </div>
   </div>
 </template>
@@ -267,6 +371,37 @@ onUnmounted(stopCarousel)
   max-width: 560px;
   max-height: 80vh;
   overflow-y: auto;
+}
+
+.overlay-card.finale-card {
+  max-width: min(1100px, 96vw);
+  padding-top: 2rem;
+}
+
+.finale-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.85rem;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.finale-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.finale-btn {
+  margin-top: 1.25rem;
 }
 
 .intro-logo {
@@ -359,6 +494,8 @@ onUnmounted(stopCarousel)
   pointer-events: none;
 }
 
+.draw-rays.pause { animation-play-state: paused; }
+
 @keyframes rotateRays { to { transform: rotate(360deg); } }
 
 .draw-card { border-color: rgba(168, 85, 247, 0.25); }
@@ -377,6 +514,18 @@ onUnmounted(stopCarousel)
   box-shadow: 0 0 40px color-mix(in srgb, var(--pool-color) 25%, transparent);
 }
 
+.slot-frame.revealing {
+  border-color: var(--gold);
+  box-shadow: 0 0 60px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 100px color-mix(in srgb, var(--gold) 20%, transparent);
+  animation: revealGlow 0.5s ease-out;
+}
+
+@keyframes revealGlow {
+  0% { box-shadow: 0 0 20px color-mix(in srgb, var(--gold) 30%, transparent); }
+  50% { box-shadow: 0 0 80px color-mix(in srgb, var(--gold) 50%, transparent), 0 0 140px color-mix(in srgb, var(--gold) 30%, transparent); }
+  100% { box-shadow: 0 0 60px color-mix(in srgb, var(--gold) 40%, transparent), 0 0 100px color-mix(in srgb, var(--gold) 20%, transparent); }
+}
+
 .carousel-slot {
   display: flex;
   flex-direction: column;
@@ -392,6 +541,28 @@ onUnmounted(stopCarousel)
 
 .carousel-slot.spinning .carousel-name {
   animation: slotTick 0.08s ease infinite;
+}
+
+.carousel-slot.revealing .carousel-avatar {
+  animation: revealPulse 0.6s ease-out;
+}
+
+.carousel-slot.revealing .carousel-name {
+  animation: revealPop 0.4s ease-out;
+}
+
+@keyframes revealPulse {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  30% { transform: scale(1.12); opacity: 1; }
+  50% { transform: scale(0.98); }
+  70% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+@keyframes revealPop {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 @keyframes carouselPulse {
@@ -440,9 +611,19 @@ onUnmounted(stopCarousel)
   animation: dotPulse 1s ease infinite;
 }
 
+.dot.pulse {
+  background: var(--gold);
+  animation: revealDot 0.6s ease-out infinite;
+}
+
 @keyframes dotPulse {
   0%, 100% { opacity: 0.3; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes revealDot {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.5); }
 }
 
 .winner-avatar { margin: 0 auto 1rem; }
@@ -516,7 +697,7 @@ onUnmounted(stopCarousel)
 
 .roster-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.75rem;
   margin-top: 1rem;
   text-align: left;
@@ -531,6 +712,68 @@ onUnmounted(stopCarousel)
 
 .roster-cap { font-weight: 700; margin-bottom: 0.25rem; }
 .roster-funds { font-size: 0.75rem; color: var(--gold); margin-bottom: 0.5rem; }
-.roster-team { list-style: none; font-size: 0.75rem; color: var(--text-muted); }
-.roster-empty { font-size: 0.75rem; color: var(--text-muted); opacity: 0.6; }
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.roster-table thead th {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.7;
+  padding: 0.2rem 0.35rem 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.roster-table tbody tr + tr td,
+.roster-table tbody tr + tr th {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pos-cell {
+  width: 2.75rem;
+  padding: 0.35rem 0.35rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.name-cell {
+  padding: 0.35rem 0.35rem;
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.slot-name {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.slot-tag {
+  margin-left: 0.35rem;
+  font-size: 0.62rem;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+  white-space: nowrap;
+}
+
+.slot-price {
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.slot-empty {
+  opacity: 0.35;
+}
 </style>

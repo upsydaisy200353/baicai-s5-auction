@@ -10,6 +10,11 @@ import type {
   Position,
 } from '../types'
 
+export interface CaptainOnlineStatus {
+  isOnline: boolean
+  lastSeen?: string | null
+}
+
 export interface ServerAuctionState {
   phase: AuctionPhase
   captains: Captain[]
@@ -18,6 +23,7 @@ export interface ServerAuctionState {
   currentPoolIndex: number
   currentPool: Position | null
   currentPlayer: Player | null
+  pendingPick: Player | null
   openBid: OpenBidContext | null
   logs: LogEntry[]
   drawCandidates: Player[]
@@ -29,6 +35,7 @@ export interface ServerAuctionState {
   auctionStage?: 'main' | 'unsold'
   unsoldPoolCount?: number
   mainPoolCount?: number
+  captainOnline?: Record<string, CaptainOnlineStatus>
 }
 
 export function fetchAuctionState() {

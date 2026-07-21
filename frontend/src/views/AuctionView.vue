@@ -187,15 +187,18 @@ async function onBuyout() {
         v-if="overlayPhases.includes(state.phase)"
         :phase="state.phase"
         :captains="state.captains"
+        :players="state.players"
         :current-pool="state.currentPool"
         :pool-order="state.poolOrder"
         :draw-candidates="state.drawCandidates"
+        :pending-pick="state.pendingPick"
         :last-result="state.lastResult"
         :is-admin="isAdmin"
         @begin="onBegin"
         @reveal-draw="onRevealDraw"
         @confirm-winner="onConfirmWinner"
         @draw-tick="onDrawTick"
+        @reset="onReset"
       />
 
       <!-- 待开始 -->
@@ -219,6 +222,22 @@ async function onBuyout() {
           </div>
         </header>
         <p class="idle-hint">全员同时叫价 · 倒计时落槌 · 最高价者得</p>
+
+        <div v-if="isAdmin && state.captains?.length" class="captain-online-panel card">
+          <h3 class="captain-online-title">队长在线状态</h3>
+          <div class="captain-online-list">
+            <div
+              v-for="captain in state.captains"
+              :key="captain.name"
+              class="captain-online-item"
+            >
+              <span :class="['online-dot', state.captainOnline?.[captain.name]?.isOnline ? 'online' : 'offline']"></span>
+              <span class="captain-name">{{ captain.name }}</span>
+              <span v-if="state.captainOnline?.[captain.name]?.isOnline" class="online-text">在线</span>
+              <span v-else class="offline-text">离线</span>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- 仪式进行中：观战大屏 -->
@@ -251,6 +270,8 @@ async function onBuyout() {
           :pool-order="state.poolOrder"
           :is-admin="isAdmin"
           :auction-stage="state.auctionStage"
+          :self-captain-name="captainName"
+          :players="state.players"
         >
           <template v-if="state.phase === 'open_bid'" #bidPanel>
             <div v-if="isAdmin" class="proxy-row">
@@ -398,6 +419,62 @@ async function onBuyout() {
   text-align: center;
   color: var(--text-muted);
   font-size: 0.875rem;
+}
+
+.captain-online-panel {
+  margin-top: 1rem;
+}
+
+.captain-online-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.captain-online-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.captain-online-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 9999px;
+}
+
+.online-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.online-dot.online {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+}
+
+.online-dot.offline {
+  background: #6b7280;
+}
+
+.captain-name {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.online-text {
+  color: #22c55e;
+  font-size: 0.75rem;
+}
+
+.offline-text {
+  color: #6b7280;
+  font-size: 0.75rem;
 }
 
 .proxy-row {

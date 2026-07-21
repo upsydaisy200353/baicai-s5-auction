@@ -3,6 +3,29 @@ import { computed, ref } from 'vue'
 import { POSITION_COLORS } from '../constants'
 import type { Position } from '../types'
 
+const DEFAULT_AVATARS = [
+  '/splash/Aatrox_暗裔剑魔.jpg',
+  '/splash/Ahri_九尾妖狐.jpg',
+  '/splash/Garen_德玛西亚之力.jpg',
+  '/splash/LeeSin_盲僧.jpg',
+  '/splash/Yasuo_疾风剑豪.jpg',
+  '/splash/Jinx_暴走萝莉.jpg',
+  '/splash/Ezreal_探险家.jpg',
+  '/splash/Lux_光辉女郎.jpg',
+  '/splash/Darius_诺克萨斯之手.jpg',
+  '/splash/Jax_武器大师.jpg',
+  '/splash/Zed_影流之主.jpg',
+  '/splash/Katarina_不祥之刃.jpg',
+  '/splash/Caitlyn_皮城女警.jpg',
+  '/splash/Vayne_暗夜猎手.jpg',
+  '/splash/Sett_腕豪.jpg',
+  '/splash/Kayn_影流之镰.jpg',
+  '/splash/Kaisa_虚空之女.jpg',
+  '/splash/Samira_沙漠玫瑰.jpg',
+  '/splash/Fiora_无双剑姬.jpg',
+  '/splash/Camille_青钢影.jpg',
+]
+
 const props = withDefaults(
   defineProps<{
     name: string
@@ -18,11 +41,17 @@ const props = withDefaults(
 
 const failed = ref(false)
 
-const initials = computed(() => props.name.slice(0, 1).toUpperCase())
-
 const accent = computed(() =>
   props.position ? POSITION_COLORS[props.position] : 'var(--accent)',
 )
+
+const defaultAvatar = computed(() => {
+  let hash = 0
+  for (let i = 0; i < props.name.length; i++) {
+    hash = props.name.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return DEFAULT_AVATARS[Math.abs(hash) % DEFAULT_AVATARS.length]
+})
 
 function onError() {
   failed.value = true
@@ -44,10 +73,13 @@ function onError() {
       loading="lazy"
       @error="onError"
     />
-    <span v-else class="avatar-fallback">
-      <span class="avatar-initial">{{ initials }}</span>
-      <small v-if="serial" class="avatar-serial">{{ serial }}</small>
-    </span>
+    <img
+      v-else
+      :src="defaultAvatar"
+      :alt="name"
+      class="avatar-img"
+      loading="lazy"
+    />
   </div>
 </template>
 

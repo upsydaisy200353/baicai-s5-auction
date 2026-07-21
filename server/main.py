@@ -43,6 +43,7 @@ from db import (
     load_auction_state,
     save_auction_state,
     update_entry,
+    update_user_online,
     update_user_password,
 )
 from seed import reseed, seed_if_empty, sync_roster_ratings_from_seed
@@ -285,8 +286,10 @@ def _mask_captain_names_for_viewer(
         state["captainAliasMap"] = aliases
         return state
 
+    is_finished = state.get("phase") == "finished"
+
     # 终场揭晓：显示真实队长名与阵容
-    if state.get("phase") == "finished":
+    if is_finished:
         state.pop("captainAliases", None)
         return state
 
@@ -298,17 +301,26 @@ def _mask_captain_names_for_viewer(
         obj["alias"] = alias_of(real)
         obj["name"] = alias_of(real) or real
 
+    def remove_captain_avatar(obj: dict | None) -> None:
+        if not obj:
+            return
+        obj.pop("avatar", None)
+
     # 队长列表：观众全部代号；队长本人保留真名，他人用代号
     for c in state.get("captains", []):
         real = c.get("name")
         c["alias"] = alias_of(real)
         if real != viewer_captain:
             c["name"] = alias_of(real) or real
+            remove_captain_avatar(c)
+            if "team" in c:
+                c["team"] = []
 
     if open_bid:
         if open_bid.get("currentLeader"):
             open_bid["currentLeader"] = alias_of(open_bid["currentLeader"])
         rename_captain_obj(open_bid.get("leaderCaptain"))
+        remove_captain_avatar(open_bid.get("leaderCaptain"))
         for bid in open_bid.get("liveBids", []):
             bid["captain"] = alias_of(bid.get("captain")) or bid.get("captain")
         for row in open_bid.get("captainRows", []):
@@ -321,6 +333,7 @@ def _mask_captain_names_for_viewer(
             c["alias"] = alias_of(real)
             if real != viewer_captain:
                 c["name"] = alias_of(real) or real
+                remove_captain_avatar(c)
         open_bid.pop("captainAliases", None)
 
     last = state.get("lastResult")
@@ -330,7 +343,11 @@ def _mask_captain_names_for_viewer(
 
     for p in state.get("players", []):
         if p.get("winner"):
-            p["winner"] = alias_of(p["winner"])
+            if viewer_captain and p["winner"] == viewer_captain:
+                pass
+            else:
+                p.pop("winner", None)
+                p.pop("finalPrice", None)
 
     state.pop("captainAliases", None)
     return state
@@ -342,6 +359,18 @@ def auction_state_response(user: dict | None = None, *, persist: bool = False) -
     viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
     masked = _mask_funds_for_viewer(state, viewer_captain, is_admin)
     masked = _mask_captain_names_for_viewer(masked, viewer_captain, is_admin)
+    
+    captain_names = [c["name"] for c in state.get("captains", [])]
+    users = list_users()
+    captain_online = {}
+    for u in users:
+        if u.get("role") == "captain" and u.get("captainName") in captain_names:
+            captain_online[u["captainName"]] = {
+                "isOnline": u.get("isOnline", False),
+                "lastSeen": u.get("lastSeen"),
+            }
+    masked["captainOnline"] = captain_online
+    
     if persist or auction.is_in_progress():
         persist_auction_state()
     return masked
@@ -738,8 +767,9 @@ def auction_settings(
 
 @app.post("/api/auction/reset")
 def auction_reset(_user: dict = Depends(require_admin)):
-    load_auction_from_db()
+    # 先回到 idle，再从名单库重载，保证下一轮资金与队伍状态干净
     auction.reset_ceremony()
+    load_auction_from_db()
     clear_auction_state()
     return auction_state_response(_user)
 

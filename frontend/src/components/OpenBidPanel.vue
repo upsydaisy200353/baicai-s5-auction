@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 const bidInput = ref('')
 const localError = ref('')
+const isEditing = ref(false)
 
 const player = computed(() => props.openBid.player)
 
@@ -59,14 +60,17 @@ const quickBtns = computed(() =>
 watch(
   () => props.openBid.minNextBid,
   (v) => {
-    bidInput.value = String(v)
+    if (!isEditing.value) {
+      bidInput.value = String(v)
+    }
     localError.value = ''
   },
   { immediate: true },
 )
 
 function parseAmount(): number | null {
-  const n = Number(bidInput.value.trim())
+  const val = String(bidInput.value).trim()
+  const n = Number(val)
   if (!Number.isFinite(n) || n <= 0) return null
   return Math.round(n)
 }
@@ -91,9 +95,18 @@ function submit(amount: number) {
 }
 
 function onSubmit() {
+  const rawValue = String(bidInput.value).trim()
   const amount = parseAmount()
+  console.log('onSubmit called:', { rawValue, amount, minNextBid: props.openBid.minNextBid, maxFunds: maxFunds.value })
   if (amount == null) {
     localError.value = '请输入有效出价'
+    playSound('uiError')
+    return
+  }
+  const err = validate(amount)
+  console.log('validation result:', { err })
+  if (err) {
+    localError.value = err
     playSound('uiError')
     return
   }
@@ -162,6 +175,8 @@ function onPass() {
           type="number"
           class="bid-input"
           :min="openBid.minNextBid"
+          @focus="isEditing = true"
+          @blur="isEditing = false"
           @keyup.enter="onSubmit"
         />
         <span class="unit">w</span>

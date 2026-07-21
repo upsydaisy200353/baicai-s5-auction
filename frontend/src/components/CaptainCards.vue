@@ -14,9 +14,14 @@ const props = defineProps<{
   ineligibleReasons?: Record<string, string>
 }>()
 
-const sorted = computed(() =>
-  [...props.captains].sort((a, b) => b.rating - a.rating),
-)
+const sorted = computed(() => {
+  const shuffled = [...props.captains]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+})
 
 function isIneligible(cap: Captain) {
   return props.ineligibleNames?.includes(cap.name) ?? false

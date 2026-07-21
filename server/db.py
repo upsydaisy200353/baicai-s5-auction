@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     session_version INTEGER NOT NULL DEFAULT 0,
     password_plain TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    last_seen TEXT,
+    is_online INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
@@ -481,6 +483,8 @@ def user_row_to_dict(row) -> dict[str, Any]:
     keys = row.keys() if hasattr(row, "keys") else []
     session_version = int(row["session_version"]) if "session_version" in keys else 0
     password_plain = row["password_plain"] if "password_plain" in keys else None
+    last_seen = row["last_seen"] if "last_seen" in keys else None
+    is_online = bool(row["is_online"]) if "is_online" in keys else False
     return {
         "id": row["id"],
         "username": row["username"],
@@ -491,6 +495,8 @@ def user_row_to_dict(row) -> dict[str, Any]:
         "displayName": row["display_name"],
         "sessionVersion": session_version,
         "createdAt": created,
+        "lastSeen": last_seen,
+        "isOnline": is_online,
     }
 
 
@@ -515,6 +521,17 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
     with connect() as conn:
         row = conn.execute(f"SELECT * FROM {users} WHERE id = ?", (user_id,)).fetchone()
     return user_row_to_dict(row) if row else None
+
+
+def update_user_online(user_id: int, is_online: bool) -> None:
+    users = _users_table()
+    now = _now()
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE {users} SET is_online = ?, last_seen = ? WHERE id = ?",
+            (1 if is_online else 0, now, user_id),
+        )
+        conn.commit()
 
 
 def create_user(data: dict[str, Any]) -> dict[str, Any]:

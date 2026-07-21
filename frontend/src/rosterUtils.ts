@@ -1,5 +1,5 @@
 import type { Captain, Player, PoolLetter, Position, RosterEntry, RosterRow } from './types'
-import { POOL_LETTERS, POSITION_NAMES, POSITION_TO_LETTER } from './constants'
+import { POOL_LETTERS, POSITIONS, POSITION_TO_LETTER } from './constants'
 
 export function entriesToPlayers(entries: RosterEntry[]): Player[] {
   return entries
@@ -105,10 +105,48 @@ export function captainSkipReason(
 ): string | null {
   if (cap.funds <= 0) return '资金不足'
   if (POOL_LETTERS[cap.poolLetter] === position) {
-    return `本人为${POSITION_NAMES[position]}`
+    return '位置限制'
   }
   if (cap.team.some((n) => players.find((p) => p.name === n)?.position === position)) {
-    return `已有${POSITION_NAMES[position]}选手`
+    return '已有同位置选手'
   }
   return null
+}
+
+export interface RosterSlot {
+  position: Position
+  name: string | null
+  isCaptain: boolean
+  price: number | null
+}
+
+/** 按 TOP→SUP 顺序整理一队五人阵容（含队长本位置） */
+export function buildCaptainRosterSlots(cap: Captain, players: Player[]): RosterSlot[] {
+  const byPos = new Map<Position, RosterSlot>()
+  const capPos = POOL_LETTERS[cap.poolLetter]
+  byPos.set(capPos, {
+    position: capPos,
+    name: cap.name,
+    isCaptain: true,
+    price: null,
+  })
+  for (const name of cap.team) {
+    const p = players.find((pl) => pl.name === name)
+    if (!p) continue
+    byPos.set(p.position, {
+      position: p.position,
+      name,
+      isCaptain: false,
+      price: p.finalPrice,
+    })
+  }
+  return POSITIONS.map(
+    (position) =>
+      byPos.get(position) ?? {
+        position,
+        name: null,
+        isCaptain: false,
+        price: null,
+      },
+  )
 }

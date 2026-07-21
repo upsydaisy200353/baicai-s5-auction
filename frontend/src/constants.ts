@@ -26,6 +26,15 @@ export const POSITION_NAMES: Record<Position, string> = {
   Support: '辅助',
 }
 
+/** 阵容表头缩写 */
+export const POSITION_SHORT: Record<Position, string> = {
+  Top: 'TOP',
+  Jungle: 'JUG',
+  Mid: 'MID',
+  Bot: 'BOT',
+  Support: 'SUP',
+}
+
 export const POSITIONS: Position[] = ['Top', 'Jungle', 'Mid', 'Bot', 'Support']
 
 export const POOL_LETTER_OPTIONS: PoolLetter[] = ['A', 'B', 'C', 'D', 'E']

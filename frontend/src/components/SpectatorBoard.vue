@@ -6,6 +6,7 @@ import PlayerAvatar from './PlayerAvatar.vue'
 import type {
   AuctionPhase,
   Captain,
+  CaptainBidRow,
   LiveBidEntry,
   OpenBidContext,
   Player,
@@ -15,12 +16,14 @@ import type {
 const props = defineProps<{
   phase: AuctionPhase
   captains: Captain[]
+  players: Player[]
   currentPool: Position | null
   currentPlayer: Player | null
   openBid: OpenBidContext | null
   poolOrder: Position[]
   isAdmin?: boolean
   auctionStage?: 'main' | 'unsold'
+  selfCaptainName?: string | null
 }>()
 
 const secondsLeft = ref(0)
@@ -72,30 +75,84 @@ const captainAvatarMap = computed(() => {
   return map
 })
 
-const displayRows = computed(() => {
-  if (props.openBid?.captainRows?.length) {
-    return props.openBid.captainRows.map((row) => ({
-      ...row,
-      avatar: captainAvatarMap.value.get(row.name),
-      position: props.currentPlayer?.position ?? props.currentPool,
-    }))
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
-  return props.captains.map((c) => ({
-    name: c.name,
-    funds: c.funds,
-    latestBid: null as number | null,
-    isLeader: false,
-    canBid: true,
-    skipReason: null as string | null,
-    passed: false,
-    avatar: c.avatar,
-    position: props.currentPool,
-  }))
+  return shuffled
+}
+
+const currentPlayerKey = computed(() => props.openBid?.player?.serial ?? props.currentPlayer?.serial)
+const cachedOrder = ref<string[]>([])
+
+watch(currentPlayerKey, () => {
+  if (props.openBid?.captainRows?.length) {
+    cachedOrder.value = shuffleArray(props.openBid.captainRows).map((r) => r.name)
+  } else {
+    cachedOrder.value = shuffleArray(props.captains).map((c) => c.name)
+  }
+}, { immediate: true })
+
+const displayRows = computed((): Array<CaptainBidRow & { avatar?: string | null; position: Position | null }> => {
+  const rows: Array<CaptainBidRow & { avatar?: string | null; position: Position | null }> = []
+  
+  if (props.openBid?.captainRows?.length) {
+    const rowMap = new Map(props.openBid.captainRows.map((r) => [r.name, r]))
+    for (const name of cachedOrder.value) {
+      const row = rowMap.get(name)
+      if (row) {
+        rows.push({
+          ...row,
+          avatar: captainAvatarMap.value.get(row.name),
+          position: props.currentPlayer?.position ?? props.currentPool,
+        })
+      }
+    }
+  } else {
+    const capMap = new Map(props.captains.map((c) => [c.name, c]))
+    for (const name of cachedOrder.value) {
+      const cap = capMap.get(name)
+      if (cap) {
+        rows.push({
+          name: cap.name,
+          funds: cap.funds,
+          latestBid: null as number | null,
+          isLeader: false,
+          canBid: true,
+          canBuyout: false,
+          buyoutUsed: false,
+          skipReason: null as string | null,
+          passed: false,
+          avatar: cap.avatar,
+          position: props.currentPool,
+        })
+      }
+    }
+  }
+  
+  return rows
 })
 
 const liveBids = computed((): LiveBidEntry[] => props.openBid?.liveBids ?? [])
 
 const spotlightPlayer = computed(() => props.openBid?.player ?? props.currentPlayer)
+
+const purchasedPlayers = computed(() => {
+  const result: Record<string, Array<{ name: string; price: number | null }>> = {}
+  const playerMap = new Map()
+  for (const p of props.players) {
+    playerMap.set(p.name, p)
+  }
+  for (const cap of props.captains) {
+    result[cap.name] = cap.team.map(name => {
+      const player = playerMap.get(name)
+      return { name, price: player?.finalPrice ?? null }
+    })
+  }
+  return result
+})
 
 const leaderName = computed(() => props.openBid?.currentLeader)
 const leaderPrice = computed(() => props.openBid?.currentPrice ?? 0)
@@ -147,16 +204,28 @@ function posLabel(position: Position | null | undefined) {
               size="md"
             />
             <div class="captain-info">
-              <span class="captain-name">{{ row.name }}</span>
+              <span class="captain-name" :class="{ 'self-captain': row.name === props.selfCaptainName }">
+                {{ row.name }}
+                <span v-if="row.name === props.selfCaptainName" class="self-tag">我</span>
+              </span>
               <span v-if="row.funds != null" class="captain-funds">余 {{ row.funds }}w</span>
             </div>
             <div class="captain-bid">
               <span v-if="row.passed" class="bid-pass">放弃</span>
               <span v-else-if="row.latestBid != null" class="bid-amt">{{ row.latestBid }}w</span>
-              <span v-else-if="row.skipReason" class="bid-skip">{{ row.skipReason }}</span>
+              <span v-else-if="row.skipReason && props.isAdmin" class="bid-skip">{{ row.skipReason }}</span>
               <span v-else class="bid-wait">—</span>
             </div>
             <span v-if="row.isLeader" class="leader-crown">领先</span>
+            <div v-if="purchasedPlayers[row.name]?.length" class="purchased-players">
+              <span class="purchased-label">已拍:</span>
+              <span class="purchased-names">
+                <span v-for="(p, i) in purchasedPlayers[row.name]" :key="p.name">
+                  {{ p.name }}<span v-if="p.price">({{ p.price }}w)</span>
+                  <span v-if="i < purchasedPlayers[row.name].length - 1">, </span>
+                </span>
+              </span>
+            </div>
           </div>
         </div>
 

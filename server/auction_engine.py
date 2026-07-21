@@ -12,7 +12,7 @@ from typing import Any
 from constants import POOL_LETTERS, POSITION_NAMES
 
 MIN_BID = 10
-MIN_INCREMENT = 10
+MIN_INCREMENT = 20
 DEFAULT_BID_EXTENSION_SECONDS = 30
 DEFAULT_NO_BID_TIMEOUT_SECONDS = 60
 UNSOLD_PRICE_MULTIPLIER = 1.25
@@ -271,9 +271,9 @@ class AuctionEngine:
             return "资金不足"
         own = self._captain_own_position(cap)
         if own == position:
-            return f"本人为{POSITION_NAMES[position]}"
+            return "位置限制"
         if position in self._captain_positions(cap):
-            return f"已有{POSITION_NAMES[position]}选手"
+            return "已有同位置选手"
         return None
 
     def _could_bid_captains(self, position: str) -> list[dict]:
@@ -486,6 +486,7 @@ class AuctionEngine:
                     "passed": cap["name"] in self.passed_captains,
                 }
             )
+        random.shuffle(captain_rows)
         has_bids = self._has_active_bids()
         timeout_seconds = (
             self.bid_extension_seconds if has_bids else self.no_bid_timeout_seconds
@@ -544,6 +545,7 @@ class AuctionEngine:
             "currentPoolIndex": self.current_pool_index,
             "currentPool": self.current_pool,
             "currentPlayer": copy.deepcopy(self.current_player),
+            "pendingPick": copy.deepcopy(self.pending_pick),
             "openBid": self._build_open_bid_context(),
             "logs": list(self.logs),
             "drawCandidates": copy.deepcopy(self.draw_candidates),
