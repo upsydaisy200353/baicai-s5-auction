@@ -92,7 +92,9 @@ CREATE TABLE IF NOT EXISTS baicai_users (
     display_name TEXT NOT NULL,
     session_version INTEGER NOT NULL DEFAULT 0,
     password_plain TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMPTZ,
+    is_online INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_baicai_users_username ON baicai_users(username);
 
@@ -246,6 +248,10 @@ def migrate_db() -> None:
                 )
             if not _pg_has_column(conn, users, "password_plain"):
                 conn.execute(f"ALTER TABLE {users} ADD COLUMN password_plain TEXT")
+            if not _pg_has_column(conn, users, "last_seen"):
+                conn.execute(f"ALTER TABLE {users} ADD COLUMN last_seen TIMESTAMPTZ")
+            if not _pg_has_column(conn, users, "is_online"):
+                conn.execute(f"ALTER TABLE {users} ADD COLUMN is_online INTEGER NOT NULL DEFAULT 0")
         else:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(roster)").fetchall()}
             if "avatar" not in cols:
