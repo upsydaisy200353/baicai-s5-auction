@@ -22,11 +22,9 @@ server/auction.db
 .DS_Store
 Thumbs.db
 
-# Deploy scripts (contain server credentials)
-deploy/
-
 # Splash art backup (canonical copy lives in frontend/public/splash/)
 /splash/
 
 # Build
 *.log
+deploy/*.zip
