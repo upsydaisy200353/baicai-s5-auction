@@ -272,6 +272,7 @@ async function onBuyout() {
           :auction-stage="state.auctionStage"
           :self-captain-name="captainName"
           :players="state.players"
+          :server-time-ms="state.serverTimeMs"
         >
           <template v-if="state.phase === 'open_bid'" #bidPanel>
             <div v-if="isAdmin" class="proxy-row">

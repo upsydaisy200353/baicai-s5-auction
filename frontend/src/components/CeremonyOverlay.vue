@@ -31,8 +31,10 @@ const spinning = ref(false)
 const revealing = ref(false)
 const hasDrawn = ref(false)
 const finaleDismissed = ref(false)
+const finaleRevealIndex = ref(-1)  // 逐队揭晓索引，-1 表示尚未开始
 let spinTimer: ReturnType<typeof setInterval> | null = null
 let revealTimer: ReturnType<typeof setTimeout> | null = null
+let finaleRevealTimer: ReturnType<typeof setTimeout> | null = null
 
 const currentCarouselPlayer = computed(() => {
   const list = props.drawCandidates
@@ -51,10 +53,35 @@ const finaleRosters = computed(() =>
   })),
 )
 
+const unsoldPlayers = computed(() =>
+  (props.players ?? []).filter((p) => p.excluded || p.inUnsoldPool),
+)
+
+const allTeamsRevealed = computed(
+  () => finaleRevealIndex.value >= finaleRosters.value.length - 1,
+)
+
 watch(
   () => props.phase,
   (phase) => {
-    if (phase === 'finished') finaleDismissed.value = false
+    if (phase === 'finished') {
+      finaleDismissed.value = false
+      finaleRevealIndex.value = -1
+      // 1秒后开始逐队揭晓
+      finaleRevealTimer = setTimeout(() => {
+        finaleRevealIndex.value = 0
+        // 每2.5秒揭晓下一队
+        const autoReveal = () => {
+          if (finaleRevealIndex.value < finaleRosters.value.length - 1) {
+            finaleRevealTimer = setTimeout(() => {
+              finaleRevealIndex.value++
+              autoReveal()
+            }, 2500)
+          }
+        }
+        autoReveal()
+      }, 1000)
+    }
   },
 )
 
@@ -103,7 +130,7 @@ function startReveal() {
   revealTimer = setTimeout(() => {
     stopReveal()
     if (props.isAdmin) emit('revealDraw')
-  }, 8000)
+  }, 5000)
 }
 
 function stopReveal() {
@@ -151,7 +178,10 @@ watch(
   { immediate: true },
 )
 
-onUnmounted(stopCarousel)
+onUnmounted(() => {
+  stopCarousel()
+  if (finaleRevealTimer) clearTimeout(finaleRevealTimer)
+})
 </script>
 
 <template>
@@ -251,12 +281,17 @@ onUnmounted(stopCarousel)
         :aria-label="isAdmin ? '结束仪式并返回大厅' : '关闭'"
         @click="onDismissFinale"
       >
-        ×
+        &times;
       </button>
       <p class="eyebrow">仪式圆满落幕</p>
       <h2 class="overlay-title">最终阵容</h2>
       <div class="roster-grid">
-        <div v-for="{ cap, slots } in finaleRosters" :key="cap.name" class="roster-card">
+        <div
+          v-for="({ cap, slots }, idx) in finaleRosters"
+          :key="cap.name"
+          class="roster-card"
+          :class="{ 'roster-hidden': idx > finaleRevealIndex, 'roster-revealed': idx <= finaleRevealIndex }"
+        >
           <div class="roster-cap">{{ cap.name }}</div>
           <div class="roster-funds">剩余 {{ cap.funds }}w</div>
           <table class="roster-table">
@@ -264,6 +299,7 @@ onUnmounted(stopCarousel)
               <tr>
                 <th scope="col">位置</th>
                 <th scope="col">选手</th>
+                <th scope="col">花费</th>
               </tr>
             </thead>
             <tbody>
@@ -279,21 +315,43 @@ onUnmounted(stopCarousel)
                   <template v-if="slot.name">
                     <span class="slot-name">{{ slot.name }}</span>
                     <span v-if="slot.isCaptain" class="slot-tag">队长</span>
-                    <span v-else-if="slot.price != null" class="slot-price">{{ slot.price }}w</span>
                   </template>
-                  <span v-else class="slot-empty">—</span>
+                  <span v-else class="slot-empty">--</span>
+                </td>
+                <td class="price-cell">
+                  <template v-if="slot.isCaptain">
+                    <span class="price-dash">--</span>
+                  </template>
+                  <template v-else-if="slot.price != null">
+                    <span class="slot-price">{{ slot.price }}w</span>
+                  </template>
+                  <template v-else>
+                    <span class="price-dash">--</span>
+                  </template>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      <!-- 流拍选手名单 -->
+      <div v-if="unsoldPlayers.length" class="unsold-section">
+        <h3 class="unsold-title">流拍选手</h3>
+        <div class="unsold-list">
+          <span v-for="p in unsoldPlayers" :key="p.name" class="unsold-chip">
+            {{ p.serial }} {{ p.name }}
+            <small v-if="p.rating">({{ p.rating }})</small>
+          </span>
+        </div>
+      </div>
+
       <button
         v-if="isAdmin"
-        class="btn-primary ceremony-btn finale-btn"
+        class="btn-primary ceremony-btn finale-btn finale-reset-btn"
         @click="onDismissFinale"
       >
-        结束仪式，返回大厅
+        重置仪式，开始下一轮
       </button>
       <button
         v-else
@@ -775,5 +833,92 @@ onUnmounted(stopCarousel)
 
 .slot-empty {
   opacity: 0.35;
+}
+
+.price-cell {
+  padding: 0.35rem 0.35rem;
+  text-align: right;
+  color: var(--text-muted);
+  vertical-align: middle;
+  font-size: 0.72rem;
+}
+
+.price-dash {
+  opacity: 0.35;
+}
+
+/* 逐队揭晓动画 */
+.roster-hidden {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  max-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: none;
+  transition: all 0.5s ease;
+}
+
+.roster-revealed {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  max-height: 600px;
+  transition: all 0.5s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* 流拍选手名单 */
+.unsold-section {
+  margin-top: 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.unsold-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--red);
+  margin-bottom: 0.5rem;
+}
+
+.unsold-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.unsold-chip {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--red-dim);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 999px;
+  color: var(--red);
+}
+
+.unsold-chip small {
+  opacity: 0.6;
+  margin-left: 0.2rem;
+}
+
+/* 醒目重置按钮 */
+.finale-reset-btn {
+  margin-top: 1.5rem;
+  padding: 0.85rem 2.5rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--gold-bright), #f59e0b);
+  color: #422006;
+  box-shadow: 0 0 20px rgba(245, 197, 66, 0.4);
+  animation: resetPulse 2s ease-in-out infinite;
+}
+
+@keyframes resetPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(245, 197, 66, 0.4); }
+  50% { box-shadow: 0 0 35px rgba(245, 197, 66, 0.6); }
+}
+
+.finale-reset-btn:hover {
+  transform: scale(1.03);
 }
 </style>

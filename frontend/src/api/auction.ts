@@ -36,6 +36,7 @@ export interface ServerAuctionState {
   unsoldPoolCount?: number
   mainPoolCount?: number
   captainOnline?: Record<string, CaptainOnlineStatus>
+  serverTimeMs?: number
 }
 
 export function fetchAuctionState() {

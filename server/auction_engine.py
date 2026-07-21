@@ -18,6 +18,8 @@ DEFAULT_NO_BID_TIMEOUT_SECONDS = 60
 UNSOLD_PRICE_MULTIPLIER = 1.25
 SOFT_CAP_BASE = 7
 HARD_CAP_BASE = 8
+MIN_RESERVE_FUNDS = 200  # 队长必须保留的最低余额（单位：w）
+MIN_TEAM_SIZE_FOR_RESERVE = 3  # 已有3名队员时启用保留限制
 
 CAPTAIN_ALIAS_POOL = [
     "绯红印记树怪",
@@ -259,6 +261,10 @@ class AuctionEngine:
             return False
         if position in self._captain_positions(cap):
             return False
+        # 已有 MIN_TEAM_SIZE_FOR_RESERVE 名队员时，剩余资金必须 >= MIN_RESERVE_FUNDS
+        if len(cap.get("team", [])) >= MIN_TEAM_SIZE_FOR_RESERVE:
+            if cap["funds"] <= MIN_RESERVE_FUNDS:
+                return False
         return True
 
     def captain_skip_reason(self, cap: dict, position: str) -> str | None:
@@ -274,6 +280,10 @@ class AuctionEngine:
             return "位置限制"
         if position in self._captain_positions(cap):
             return "已有同位置选手"
+        # 已有 MIN_TEAM_SIZE_FOR_RESERVE 名队员时，剩余资金必须 >= MIN_RESERVE_FUNDS
+        if len(cap.get("team", [])) >= MIN_TEAM_SIZE_FOR_RESERVE:
+            if cap["funds"] <= MIN_RESERVE_FUNDS:
+                return f"需保留{MIN_RESERVE_FUNDS}w余额"
         return None
 
     def _could_bid_captains(self, position: str) -> list[dict]:
@@ -644,8 +654,25 @@ class AuctionEngine:
                 self._boost_unsold_prices()
                 drawable = self.drawable_players()
             if not drawable:
-                self._finish_ceremony()
-                return
+                # 最后一次尝试：逐个排除确实无人能竞拍的流拍选手
+                if self.auction_stage == "unsold":
+                    excluded_count = 0
+                    remaining_unsold = [
+                        p for p in self.players
+                        if p.get("inUnsoldPool") and not p.get("sold") and not p.get("excluded")
+                    ]
+                    for p in remaining_unsold:
+                        drawable = self.drawable_players()
+                        if drawable:
+                            break
+                        p["excluded"] = True
+                        p["inUnsoldPool"] = False
+                        excluded_count += 1
+                        self.add_log(f"流拍排除：{p['name']}（无队长可竞拍）", "warn")
+                    drawable = self.drawable_players()
+                if not drawable:
+                    self._finish_ceremony()
+                    return
 
         pick = self._weighted_pick(drawable)
         self.pending_pick = pick

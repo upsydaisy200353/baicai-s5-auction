@@ -151,4 +151,5 @@ export interface AuctionSnapshot {
   auctionStage?: 'main' | 'unsold'
   unsoldPoolCount?: number
   mainPoolCount?: number
+  serverTimeMs?: number
 }

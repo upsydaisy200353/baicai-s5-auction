@@ -355,6 +355,8 @@ def _mask_captain_names_for_viewer(
 
 def auction_state_response(user: dict | None = None, *, persist: bool = False) -> dict:
     state = enrich_auction_state(auction.to_state())
+    import time as _time
+    state["serverTimeMs"] = int(_time.time() * 1000)
     is_admin = bool(user and user.get("role") == "admin")
     viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
     masked = _mask_funds_for_viewer(state, viewer_captain, is_admin)

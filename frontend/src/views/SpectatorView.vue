@@ -60,6 +60,7 @@ onUnmounted(() => {
         :open-bid="state.openBid"
         :pool-order="state.poolOrder"
         :auction-stage="state.auctionStage"
+        :server-time-ms="state.serverTimeMs"
       />
 
       <div v-else class="idle card">

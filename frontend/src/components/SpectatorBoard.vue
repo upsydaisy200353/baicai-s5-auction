@@ -24,18 +24,36 @@ const props = defineProps<{
   isAdmin?: boolean
   auctionStage?: 'main' | 'unsold'
   selfCaptainName?: string | null
+  serverTimeMs?: number
 }>()
 
 const secondsLeft = ref(0)
 let tickTimer: ReturnType<typeof setInterval> | null = null
+let lastFetchTime = Date.now()
+let serverTimeOffset = 0  // 服务器时间 - 客户端时间 的偏移量
 
 function updateTimer() {
   if (!props.openBid?.deadlineMs) {
     secondsLeft.value = 0
     return
   }
-  secondsLeft.value = Math.max(0, (props.openBid.deadlineMs - Date.now()) / 1000)
+  // 用服务端时间校准：serverNow = serverTimeMs + (Date.now() - lastFetchTime)
+  const serverNow = props.serverTimeMs
+    ? props.serverTimeMs + (Date.now() - lastFetchTime)
+    : Date.now()
+  secondsLeft.value = Math.max(0, (props.openBid.deadlineMs - serverNow) / 1000)
 }
+
+watch(
+  () => props.serverTimeMs,
+  (ms) => {
+    if (ms) {
+      lastFetchTime = Date.now()
+      serverTimeOffset = ms - Date.now()
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => props.openBid?.deadlineMs,
