@@ -533,10 +533,20 @@ def update_user_online(user_id: int, is_online: bool) -> None:
     users = _users_table()
     now = _now()
     with connect() as conn:
-        conn.execute(
-            f"UPDATE {users} SET is_online = ?, last_seen = ? WHERE id = ?",
-            (1 if is_online else 0, now, user_id),
-        )
+        try:
+            conn.execute(
+                f"UPDATE {users} SET is_online = ?, last_seen = ? WHERE id = ?",
+                (1 if is_online else 0, now, user_id),
+            )
+        except Exception:
+            # 兼容旧表缺少 is_online / last_seen 列
+            try:
+                conn.execute(
+                    f"UPDATE {users} SET last_seen = ? WHERE id = ?",
+                    (now, user_id),
+                )
+            except Exception:
+                pass
         conn.commit()
 
 
