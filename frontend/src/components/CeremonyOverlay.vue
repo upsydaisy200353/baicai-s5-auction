@@ -369,16 +369,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 8, 14, 0.72);
-  backdrop-filter: blur(14px);
+  background: #f5f2ec;
+  backdrop-filter: none;
   animation: fadeIn 0.4s ease;
 }
 
 .overlay-bg {
   position: absolute;
   inset: 0;
-  background: url('/images/hero-ceremony-bg.png') center / cover no-repeat;
-  opacity: 0.35;
+  display: none;
 }
 
 .overlay-bg.draw-bg {
@@ -922,8 +921,8 @@ onUnmounted(() => {
 /* Warm-paper ceremony intro, aligned with the refreshed application shell. */
 .overlay.intro {
   padding: 5.5rem 1rem 1rem;
-  background: rgba(244, 239, 230, 0.84);
-  backdrop-filter: blur(10px) saturate(0.88);
+  background: #f5f2ec;
+  backdrop-filter: none;
 }
 .overlay.intro .overlay-bg {
   opacity: 0.12;
@@ -1046,8 +1045,8 @@ onUnmounted(() => {
 
 /* Warm-paper treatment for every post-intro ceremony phase. */
 .overlay:not(.intro) {
-  background: rgba(244, 239, 230, 0.88);
-  backdrop-filter: blur(10px) saturate(0.88);
+  background: #f5f2ec;
+  backdrop-filter: none;
 }
 .overlay:not(.intro) .overlay-bg {
   opacity: 0.1;
