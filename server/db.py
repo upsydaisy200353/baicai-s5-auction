@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,11 @@ CREATE TABLE IF NOT EXISTS auction_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     state_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auction_history (
+    id TEXT PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS feedback (
@@ -102,6 +108,11 @@ CREATE TABLE IF NOT EXISTS baicai_auction_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     state_json TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS baicai_auction_history (
+    id TEXT PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS baicai_feedback (
@@ -186,6 +197,9 @@ def init_db() -> None:
         with connect() as conn:
             conn.executescript(SQLITE_SCHEMA)
     migrate_db()
+    users = _users_table()
+    with connect() as conn:
+        conn.execute(f"UPDATE {users} SET password_plain = NULL")
 
 
 def _pg_has_column(conn, table: str, column: str) -> bool:
@@ -488,14 +502,24 @@ def user_row_to_dict(row) -> dict[str, Any]:
         created = created.isoformat()
     keys = row.keys() if hasattr(row, "keys") else []
     session_version = int(row["session_version"]) if "session_version" in keys else 0
-    password_plain = row["password_plain"] if "password_plain" in keys else None
     last_seen = row["last_seen"] if "last_seen" in keys else None
     is_online = bool(row["is_online"]) if "is_online" in keys else False
+    if is_online and last_seen is None:
+        is_online = False
+    if is_online:
+        try:
+            seen = last_seen
+            if isinstance(seen, str):
+                seen = datetime.fromisoformat(seen.replace("Z", "+00:00"))
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            is_online = datetime.now(timezone.utc) - seen <= timedelta(seconds=60)
+        except (AttributeError, TypeError, ValueError):
+            is_online = False
     return {
         "id": row["id"],
         "username": row["username"],
         "passwordHash": row["password_hash"],
-        "passwordPlain": password_plain,
         "role": row["role"],
         "captainName": row["captain_name"],
         "displayName": row["display_name"],
@@ -553,7 +577,7 @@ def update_user_online(user_id: int, is_online: bool) -> None:
 def create_user(data: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     users = _users_table()
-    password_plain = data.get("passwordPlain")
+    password_plain = None
     with connect() as conn:
         if DATABASE_URL:
             row = conn.execute(
@@ -652,6 +676,41 @@ def clear_auction_state() -> None:
         conn.execute(f"DELETE FROM {table}")
 
 
+def delete_auction_history(auction_id: str) -> None:
+    table = "baicai_auction_history" if DATABASE_URL else "auction_history"
+    with connect() as conn:
+        conn.execute(f"DELETE FROM {table} WHERE id = ?", (auction_id,))
+
+
+def save_auction_history(auction_id: str, state_json: str) -> None:
+    table = "baicai_auction_history" if DATABASE_URL else "auction_history"
+    with connect() as conn:
+        conn.execute(
+            f"INSERT INTO {table} (id, state_json, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            (auction_id, state_json, _now()),
+        )
+
+
+def list_auction_history() -> list[dict[str, Any]]:
+    table = "baicai_auction_history" if DATABASE_URL else "auction_history"
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT id, state_json, created_at FROM {table} ORDER BY created_at DESC"
+        ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            state = json.loads(row["state_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        created = row["created_at"]
+        if hasattr(created, "isoformat"):
+            created = created.isoformat()
+        result.append({"id": row["id"], "completedAt": created, "state": state})
+    return result
+
+
 def get_user_by_captain_name(captain_name: str) -> dict[str, Any] | None:
     users = _users_table()
     with connect() as conn:
@@ -676,14 +735,12 @@ def bump_user_session_version(user_id: int) -> int:
     return int(row["session_version"])
 
 
-def update_user_password(
-    user_id: int, password_hash: str, password_plain: str | None = None
-) -> None:
+def update_user_password(user_id: int, password_hash: str) -> None:
     users = _users_table()
     with connect() as conn:
         conn.execute(
-            f"UPDATE {users} SET password_hash = ?, password_plain = ? WHERE id = ?",
-            (password_hash, password_plain, user_id),
+            f"UPDATE {users} SET password_hash = ?, password_plain = NULL WHERE id = ?",
+            (password_hash, user_id),
         )
 
 
