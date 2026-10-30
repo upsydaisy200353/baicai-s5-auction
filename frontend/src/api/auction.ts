@@ -44,6 +44,42 @@ export function fetchAuctionState() {
 }
 
 /** 观战大屏 — 无需登录 */
+export interface AuctionHistoryRecord {
+  id: string
+  completedAt: string
+  state: {
+    phase: AuctionPhase
+    captains: Captain[]
+    players: Player[]
+    poolOrder?: Position[]
+    logs: LogEntry[]
+    auctionStage?: 'main' | 'unsold'
+  }
+}
+
+export function fetchAuctionHistory() {
+  return apiRequest<AuctionHistoryRecord[]>('/auction/history')
+}
+
+export interface AuctionResultSnapshot {
+  id: string
+  completedAt: string
+  state: {
+    phase: AuctionPhase
+    captains: Captain[]
+    players: Player[]
+    poolOrder?: Position[]
+    auctionStage?: 'main' | 'unsold'
+  }
+}
+
+export function fetchLatestAuctionResult() {
+  return fetch('/api/auction/latest-result').then(async (res) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json() as Promise<AuctionResultSnapshot | null>
+  })
+}
+
 export function fetchSpectatorState() {
   return fetch('/api/auction/spectator').then(async (res) => {
     if (!res.ok) {
