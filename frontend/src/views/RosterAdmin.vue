@@ -21,12 +21,33 @@ const message = ref('')
 const error = ref('')
 const activeTab = ref<'players' | 'captains'>('players')
 const auctionLocked = ref(false)
+const playerSearch = ref('')
+const playerPool = ref<PoolLetter | ''>('')
+const playerRating = ref('')
 
 const players = computed(() =>
   entries.value
     .filter((e) => e.identity === 'player')
     .sort((a, b) => a.sortOrder - b.sortOrder),
 )
+
+const playerRatings = computed(() =>
+  [...new Set(players.value.map((e) => (e.rating ?? '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })),
+)
+
+const filteredPlayers = computed(() => {
+  const query = playerSearch.value.trim().toLocaleLowerCase()
+  return players.value.filter((entry) => {
+    const matchesQuery =
+      !query ||
+      entry.name.toLocaleLowerCase().includes(query) ||
+      (entry.serial ?? '').toLocaleLowerCase().includes(query)
+    const matchesPool = !playerPool.value || entry.poolLetter === playerPool.value
+    const matchesRating = !playerRating.value || (entry.rating ?? '').trim() === playerRating.value
+    return matchesQuery && matchesPool && matchesRating
+  })
+})
 
 const captains = computed(() =>
   entries.value
@@ -269,6 +290,39 @@ async function addCaptain() {
         <button class="btn-primary" :disabled="auctionLocked" @click="addPlayer">添加选手</button>
       </div>
 
+      <div class="card roster-filters">
+        <label class="filter-search">
+          搜索选手
+          <input v-model.trim="playerSearch" type="search" placeholder="输入选手名称或序号" />
+        </label>
+        <label>
+          位置池
+          <select v-model="playerPool">
+            <option value="">全部位置</option>
+            <option v-for="l in POOL_LETTER_OPTIONS" :key="l" :value="l">
+              {{ posLabel(l) }}
+            </option>
+          </select>
+        </label>
+        <label>
+          评级
+          <select v-model="playerRating">
+            <option value="">全部评级</option>
+            <option v-for="rating in playerRatings" :key="rating" :value="rating">
+              {{ rating }}
+            </option>
+          </select>
+        </label>
+        <span class="filter-count">显示 {{ filteredPlayers.length }} / {{ players.length }} 名</span>
+        <button
+          class="btn-ghost btn-sm"
+          :disabled="!playerSearch && !playerPool && !playerRating"
+          @click="playerSearch = ''; playerPool = ''; playerRating = ''"
+        >
+          清除筛选
+        </button>
+      </div>
+
       <div class="table-wrap card">
         <table class="edit-table">
           <thead>
@@ -288,7 +342,10 @@ async function addCaptain() {
             <tr v-if="players.length === 0">
               <td colspan="9" class="empty">暂无选手</td>
             </tr>
-            <tr v-for="entry in players" :key="entry.id">
+            <tr v-else-if="filteredPlayers.length === 0">
+              <td colspan="9" class="empty">没有符合条件的选手</td>
+            </tr>
+            <tr v-for="entry in filteredPlayers" :key="entry.id">
               <td><input v-model.number="entry.sortOrder" type="number" class="input-sm" /></td>
               <td><input v-model="entry.serial" class="input-sm input-serial" /></td>
               <td><input v-model="entry.name" /></td>
@@ -457,6 +514,46 @@ async function addCaptain() {
   background: var(--gold-dim);
   color: var(--gold);
   border: 1px solid rgba(245, 197, 66, 0.25);
+}
+
+.roster-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.roster-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.roster-filters .filter-search {
+  flex: 1 1 240px;
+}
+
+.roster-filters input,
+.roster-filters select {
+  min-height: 36px;
+}
+
+.filter-count {
+  padding: 0.55rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .roster-filters label,
+  .roster-filters .filter-search {
+    flex: 1 1 100%;
+  }
 }
 
 .tabs {
