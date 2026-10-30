@@ -134,8 +134,7 @@ async function saveMyPassword() {
               <th>显示名</th>
               <th>用户名</th>
               <th>角色</th>
-              <th>当前密码</th>
-              <th>新密码</th>
+              <th>设置新密码</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -145,9 +144,6 @@ async function saveMyPassword() {
               <td><code>{{ u.username }}</code></td>
               <td>
                 <span class="role" :class="u.role">{{ u.role === 'admin' ? '管理员' : '队长' }}</span>
-              </td>
-              <td>
-                <code class="current-pw">{{ u.passwordPlain || '（未知）' }}</code>
               </td>
               <td>
                 <input
