@@ -70,7 +70,7 @@ def _slug_username(name: str) -> str:
 
 
 def _set_password(user_id: int, plain: str) -> None:
-    update_user_password(user_id, hash_password(plain), password_plain=plain)
+    update_user_password(user_id, hash_password(plain))
 
 
 def ensure_captain_user(captain_name: str) -> dict | None:
@@ -84,7 +84,6 @@ def ensure_captain_user(captain_name: str) -> dict | None:
         {
             "username": username,
             "passwordHash": hash_password(plain),
-            "passwordPlain": plain,
             "role": "captain",
             "captainName": captain_name,
             "displayName": captain_name,
@@ -101,7 +100,6 @@ def seed_users() -> None:
         {
             "username": ADMIN_USER["username"],
             "passwordHash": hash_password(admin_plain),
-            "passwordPlain": admin_plain,
             "role": "admin",
             "captainName": None,
             "displayName": ADMIN_USER["displayName"],
@@ -118,7 +116,6 @@ def seed_users() -> None:
             {
                 "username": username,
                 "passwordHash": hash_password(cap_plain),
-                "passwordPlain": cap_plain,
                 "role": "captain",
                 "captainName": captain_name,
                 "displayName": captain_name,
@@ -137,68 +134,13 @@ def sync_roster_captain_users() -> None:
             ensure_captain_user(entry["name"])
 
 
-def _guess_plain(user: dict) -> str | None:
-    stored = user.get("passwordPlain")
-    if stored:
-        return stored
-    candidates = [
-        default_admin_password() if user["role"] == "admin" else default_captain_password(),
-        "baicai-s5",
-        "baicai-admin",
-        "UDNB",
-        "baicai",
-        _PLACEHOLDER_PLAIN,
-    ]
-    seen: set[str] = set()
-    for cand in candidates:
-        if cand in seen:
-            continue
-        seen.add(cand)
-        if verify_password(cand, user["passwordHash"]):
-            return None if cand == _PLACEHOLDER_PLAIN else cand
-    return None
-
-
 def ensure_user_passwords() -> None:
-    """升级免密占位；同步管理员/队长默认密码；回填明文供管理页展示。"""
+    """只升级历史免密占位口令；保留用户在管理页设置的密码。"""
     init_db()
-    admin_plain = default_admin_password()
-    cap_plain = default_captain_password()
-    upgraded = 0
-
     for user in list_users():
-        role = user["role"]
-        desired = admin_plain if role == "admin" else cap_plain
-
         if is_placeholder_password(user["passwordHash"]):
+            desired = default_admin_password() if user["role"] == "admin" else default_captain_password()
             _set_password(user["id"], desired)
-            upgraded += 1
-            continue
-
-        # 管理员：强制同步到配置默认
-        if role == "admin" and not verify_password(desired, user["passwordHash"]):
-            _set_password(user["id"], desired)
-            print("Admin password synced to configured default")
-            continue
-
-        # 队长：统一同步到当前默认 baicai（杯赛现场统一口令）
-        if role == "captain" and not verify_password(desired, user["passwordHash"]):
-            _set_password(user["id"], desired)
-            upgraded += 1
-            continue
-        if role == "captain" and verify_password(desired, user["passwordHash"]):
-            if user.get("passwordPlain") != desired:
-                update_user_password(user["id"], user["passwordHash"], password_plain=desired)
-            continue
-
-        # 其它：尽量回填可识别的明文
-        if not user.get("passwordPlain"):
-            guessed = _guess_plain(user)
-            if guessed:
-                update_user_password(user["id"], user["passwordHash"], password_plain=guessed)
-
-    if upgraded:
-        print(f"Upgraded {upgraded} account password(s) to current defaults")
 
 
 def reseed_users() -> None:
@@ -261,9 +203,7 @@ def list_manageable_users() -> list[dict]:
             continue
         user = by_captain.get(entry["name"]) or ensure_captain_user(entry["name"])
         if user:
-            # 重新取一遍以带上最新明文
-            refreshed = next((x for x in list_users() if x["id"] == user["id"]), user)
-            result.append(refreshed)
+            result.append(user)
     return result
 
 
