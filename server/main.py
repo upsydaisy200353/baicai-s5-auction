@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,7 +42,10 @@ from db import (
     list_roster,
     list_users,
     load_auction_state,
+    list_auction_history,
+    delete_auction_history,
     save_auction_state,
+    save_auction_history,
     update_entry,
     update_user_online,
     update_user_password,
@@ -361,16 +365,20 @@ def auction_state_response(user: dict | None = None, *, persist: bool = False) -
     viewer_captain = user.get("captainName") if user and user.get("role") == "captain" else None
     masked = _mask_funds_for_viewer(state, viewer_captain, is_admin)
     masked = _mask_captain_names_for_viewer(masked, viewer_captain, is_admin)
-    
-    captain_names = [c["name"] for c in state.get("captains", [])]
-    users = list_users()
+    for entry in masked.get("logs", []):
+        entry.pop("realText", None)
+    if not is_admin and masked.get("phase") == "finished":
+        masked.pop("logs", None)
+
     captain_online = {}
-    for u in users:
-        if u.get("role") == "captain" and u.get("captainName") in captain_names:
-            captain_online[u["captainName"]] = {
-                "isOnline": u.get("isOnline", False),
-                "lastSeen": u.get("lastSeen"),
-            }
+    if is_admin:
+        captain_names = {c["name"] for c in state.get("captains", [])}
+        for u in list_users():
+            if u.get("role") == "captain" and u.get("captainName") in captain_names:
+                captain_online[u["captainName"]] = {
+                    "isOnline": u.get("isOnline", False),
+                    "lastSeen": u.get("lastSeen"),
+                }
     masked["captainOnline"] = captain_online
     
     if persist or auction.is_in_progress():
@@ -379,6 +387,42 @@ def auction_state_response(user: dict | None = None, *, persist: bool = False) -
 
 
 def persist_auction_state() -> None:
+    if auction.phase == "finished" and auction.auction_id:
+        archived = json.loads(auction.serialize())
+        aliases = archived.get("captainAliases") or {}
+        logs = archived.get("logs", [])
+        for entry in logs:
+            entry["text"] = entry.pop("realText", entry.get("text", ""))
+        # Legacy alias logs rotated once per player. Reconstruct the single winning proxy
+        # bidder for each lot from the final winner and the sale log.
+        players_by_serial = {p.get("serial"): p for p in archived.get("players", [])}
+        lot_start = None
+        lot_player = None
+        for index, entry in enumerate(logs):
+            text = entry.get("text", "")
+            if text.startswith("公开竞拍 — "):
+                serial = text.split("—", 1)[1].strip().split(" ", 1)[0]
+                lot_start = index
+                lot_player = players_by_serial.get(serial)
+            elif lot_start is not None and lot_player and text.startswith("成交："):
+                winner = lot_player.get("winner")
+                alias = text[len("成交："):].split(" 以 ", 1)[0]
+                if winner and alias and alias != winner:
+                    for related in logs[lot_start:index + 1]:
+                        related["text"] = related.get("text", "").replace(alias, winner)
+                lot_start = None
+                lot_player = None
+        for entry in logs:
+            text = entry.get("text", "")
+            for real_name, alias in aliases.items():
+                if alias and alias != real_name:
+                    text = text.replace(alias, real_name)
+            entry["text"] = text
+        archived["captainAliases"] = {}
+        save_auction_history(
+            auction.auction_id,
+            json.dumps(archived, ensure_ascii=False),
+        )
     if auction.is_in_progress():
         save_auction_state(auction.serialize())
     else:
@@ -391,10 +435,28 @@ def restore_auction_state() -> None:
         return
     try:
         auction.deserialize(raw)
-        print(f"Auction state restored (phase={auction.phase})")
     except Exception as exc:
         print(f"Failed to restore auction state: {exc}")
         clear_auction_state()
+        return
+
+    unresolved = [p for p in auction.players if not p.get("sold") and not p.get("excluded")]
+    if auction.phase == "finished" and auction.auction_stage == "unsold" and unresolved:
+        if auction.auction_id:
+            delete_auction_history(auction.auction_id)
+        for player in unresolved:
+            player["inUnsoldPool"] = True
+        auction.logs = [
+            entry for entry in auction.logs
+            if entry.get("text") != "选人仪式圆满结束"
+        ]
+        auction.phase = "player_done"
+        auction._start_draw()
+        persist_auction_state()
+        print(f"Resumed incomplete unsold stage ({len(unresolved)} players; phase={auction.phase})")
+        return
+
+    print(f"Auction state restored (phase={auction.phase})")
 
 
 def _refresh_auction_ratings_from_roster() -> None:
@@ -516,12 +578,10 @@ def change_password(
         raise HTTPException(404, "用户不存在")
     if not verify_password(payload.currentPassword, full["passwordHash"]):
         raise HTTPException(400, "当前密码不正确")
-    update_user_password(
-        full["id"], hash_password(payload.newPassword), password_plain=payload.newPassword
-    )
-    if full["role"] == "captain":
-        bump_user_session_version(full["id"])
-    return {"ok": True}
+    update_user_password(full["id"], hash_password(payload.newPassword))
+    new_version = bump_user_session_version(full["id"])
+    refreshed = get_user_by_id(full["id"])
+    return {"ok": True, "token": create_token(refreshed, new_version)}
 
 
 @app.get("/api/admin/users")
@@ -533,7 +593,6 @@ def admin_list_users(_user: dict = Depends(require_admin)):
             "role": u["role"],
             "captainName": u.get("captainName"),
             "displayName": u.get("displayName"),
-            "passwordPlain": u.get("passwordPlain") or "",
         }
         for u in list_manageable_users()
     ]
@@ -548,23 +607,24 @@ def admin_set_password(
     target = get_user_by_id(user_id)
     if not target:
         raise HTTPException(404, "用户不存在")
-    update_user_password(
-        target["id"],
-        hash_password(payload.newPassword),
-        password_plain=payload.newPassword,
-    )
-    if target["role"] == "captain":
-        bump_user_session_version(target["id"])
-    return {
-        "ok": True,
-        "username": target["username"],
-        "passwordPlain": payload.newPassword,
-    }
+    update_user_password(target["id"], hash_password(payload.newPassword))
+    new_version = bump_user_session_version(target["id"])
+    response = {"ok": True, "username": target["username"]}
+    if target["id"] == _user["id"]:
+        response["token"] = create_token(get_user_by_id(target["id"]), new_version)
+    return response
 
 
 @app.get("/api/auth/me")
 def me(user: dict = Depends(get_current_user)):
     return user
+
+
+@app.post("/api/auth/logout")
+def auth_logout(user: dict = Depends(get_current_user)):
+    update_user_online(user["id"], False)
+    bump_user_session_version(user["id"])
+    return {"ok": True}
 
 
 @app.get("/api/auth/accounts-hint")
@@ -685,6 +745,28 @@ def auction_state(user: dict = Depends(get_current_user)):
 def auction_spectator():
     """观战大屏只读状态，无需登录"""
     return auction_state_response()
+
+
+@app.get("/api/auction/history")
+def auction_history(_user: dict = Depends(require_admin)):
+    """仅管理员可读取完整拍卖归档与流程记录。"""
+    return list_auction_history()
+
+
+@app.get("/api/auction/latest-result")
+def auction_latest_result():
+    """公开观战大屏使用的最近一场最终阵容摘要，不包含流程日志。"""
+    records = list_auction_history()
+    if not records:
+        return None
+    record = records[0]
+    archived = record["state"]
+    visible_state = {
+        key: archived[key]
+        for key in ("phase", "captains", "players", "poolOrder", "auctionStage")
+        if key in archived
+    }
+    return {"id": record["id"], "completedAt": record["completedAt"], "state": visible_state}
 
 
 @app.post("/api/auction/start")
