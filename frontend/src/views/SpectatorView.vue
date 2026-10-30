@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { fetchSpectatorState, type ServerAuctionState } from '../api/auction'
+import { fetchLatestAuctionResult, fetchSpectatorState, type AuctionResultSnapshot, type ServerAuctionState } from '../api/auction'
 import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import SpectatorBoard from '../components/SpectatorBoard.vue'
 import { useAuctionSounds } from '../composables/useAuctionSounds'
+import { useAuth } from '../stores/auth'
 
 const state = ref<ServerAuctionState | null>(null)
+const latestArchive = ref<AuctionResultSnapshot | null>(null)
+const { isAdmin } = useAuth()
+let historyChecked = false
 const error = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -16,6 +20,10 @@ const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 async function refresh() {
   try {
     state.value = await fetchSpectatorState()
+    if (state.value.phase === 'idle' && !historyChecked) {
+      historyChecked = true
+      try { latestArchive.value = await fetchLatestAuctionResult() } catch { /* 保持空闲页可用 */ }
+    }
     error.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : '同步失败'
@@ -40,6 +48,7 @@ onUnmounted(() => {
       <CeremonyOverlay
         v-if="overlayPhases.includes(state.phase)"
         :phase="state.phase"
+        :is-admin="isAdmin"
         :captains="state.captains"
         :players="state.players"
         :current-pool="state.currentPool"
@@ -61,6 +70,19 @@ onUnmounted(() => {
         :pool-order="state.poolOrder"
         :auction-stage="state.auctionStage"
         :server-time-ms="state.serverTimeMs"
+      />
+
+      <SpectatorBoard
+        v-else-if="latestArchive"
+        :phase="'finished'"
+        :is-admin="isAdmin"
+        :captains="latestArchive.state.captains"
+        :players="latestArchive.state.players"
+        :current-pool="null"
+        :current-player="null"
+        :open-bid="null"
+        :pool-order="latestArchive.state.poolOrder ?? []"
+        :auction-stage="latestArchive.state.auctionStage"
       />
 
       <div v-else class="idle card">
