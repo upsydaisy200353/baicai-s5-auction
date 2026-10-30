@@ -144,6 +144,11 @@ async function onHammer() {
 }
 
 async function onReset() {
+  const completed = state.value?.phase === 'finished'
+  const message = completed
+    ? '本场已完成，完整流程已保存到拍卖历史。确定返回大厅并开始下一轮吗？'
+    : '本场尚未完成。重置会清空当前成交和待拍进度，且不会保存为完整拍卖历史。确定继续吗？'
+  if (!window.confirm(message)) return
   await runAction(apiResetAuction, '已重置')
 }
 
@@ -197,7 +202,8 @@ async function onBuyout() {
         :draw-candidates="state.drawCandidates"
         :pending-pick="state.pendingPick"
         :last-result="state.lastResult"
-        :is-admin="isAdmin"
+         :is-admin="isAdmin"
+        :auction-settings="state.auctionSettings"
         @begin="onBegin"
         @reveal-draw="onRevealDraw"
         @confirm-winner="onConfirmWinner"
