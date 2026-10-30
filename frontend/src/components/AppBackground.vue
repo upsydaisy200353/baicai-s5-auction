@@ -28,19 +28,17 @@
 .bg-photo {
   position: absolute;
   inset: 0;
-  background:
-    url('/images/hero-ceremony-bg.png') center top / cover no-repeat;
-  opacity: 0.22;
-  transform: scale(1.04);
-  animation: slowZoom 30s ease-in-out infinite alternate;
+  background: none;
+  opacity: 0;
+  transform: none;
+  animation: none;
 }
 
 .bg-texture {
   position: absolute;
   inset: 0;
-  background: url('/images/bg-texture.png') center / cover no-repeat;
-  opacity: 0.35;
-  mix-blend-mode: screen;
+  background: none;
+  opacity: 0;
 }
 
 .bg-mesh {
