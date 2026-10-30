@@ -15,8 +15,8 @@ const showGuestNav = computed(
 
 onMounted(init)
 
-function onLogout() {
-  logout()
+async function onLogout() {
+  await logout()
   router.push('/login')
 }
 </script>
@@ -30,12 +30,13 @@ function onLogout() {
         <img src="/logo.svg" alt="" class="nav-logo" />
         <span class="nav-brand-text">
           <strong>白菜杯</strong>
-          <small>S5 选人仪式</small>
+          <small>S6 选人仪式</small>
         </span>
       </RouterLink>
       <div class="nav-links">
         <RouterLink to="/" class="nav-link" active-class="active">选人仪式</RouterLink>
         <RouterLink to="/spectator" class="nav-link" active-class="active">观战大屏</RouterLink>
+        <RouterLink v-if="isAdmin" to="/history" class="nav-link" active-class="active">拍卖历史</RouterLink>
         <RouterLink to="/feedback" class="nav-link" active-class="active">意见反馈</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin" class="nav-link" active-class="active">
           名单管理
@@ -55,11 +56,11 @@ function onLogout() {
       <button class="btn-ghost btn-sm" @click="onLogout">退出</button>
     </nav>
     <nav v-else-if="showGuestNav" class="nav card fade-in guest-nav">
-      <RouterLink :to="route.name === 'feedback' ? '/feedback' : '/spectator'" class="nav-brand">
+      <RouterLink :to="route.name === 'feedback' ? '/feedback' : route.name === 'history' ? '/history' : '/spectator'" class="nav-brand">
         <img src="/logo.svg" alt="" class="nav-logo" />
         <span class="nav-brand-text">
           <strong>白菜杯</strong>
-          <small>{{ route.name === 'feedback' ? '意见反馈' : '观战大屏' }}</small>
+          <small>{{ route.name === 'feedback' ? '意见反馈' : route.name === 'history' ? '拍卖历史' : '观战大屏' }}</small>
         </span>
       </RouterLink>
       <span class="spacer" />
