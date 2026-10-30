@@ -2,6 +2,9 @@
 
 import type { PoolLetter, Position } from './types'
 
+/** Minimum legal bid increment, in w. Keep aligned with server/auction_engine.py. */
+export const MIN_INCREMENT = 20
+
 export const POOL_LETTERS: Record<PoolLetter, Position> = {
   A: 'Top',
   B: 'Jungle',
