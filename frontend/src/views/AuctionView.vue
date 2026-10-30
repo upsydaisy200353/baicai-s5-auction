@@ -37,6 +37,10 @@ const { onDrawTick, onHammerClick, onActionError } = useAuctionSounds(state, {
 
 const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 
+const onlineCaptainCount = computed(() =>
+  Object.values(state.value?.captainOnline ?? {}).filter((captain) => captain.isOnline).length,
+)
+
 const myCaptainRow = computed(() => {
   if (!state.value?.openBid || !captainName.value) return null
   return state.value.openBid.captainRows.find((r) => r.name === captainName.value) ?? null
@@ -221,7 +225,33 @@ async function onBuyout() {
             <router-link to="/spectator" class="btn-ghost">观战大屏 ↗</router-link>
           </div>
         </header>
-        <p class="idle-hint">全员同时叫价 · 倒计时落槌 · 最高价者得</p>
+        <section class="prep-overview card" aria-labelledby="prep-title">
+          <header class="prep-header">
+            <div>
+              <p class="prep-kicker">BEFORE THE CEREMONY</p>
+              <h2 id="prep-title">开场前确认</h2>
+              <p>名单与队长状态已同步，仪式开始后将进入位置抽签和公开竞价。</p>
+            </div>
+            <span class="prep-phase"><i></i> 等待开始</span>
+          </header>
+          <div class="prep-grid">
+            <article class="prep-item">
+              <span class="prep-index">01</span>
+              <div><strong>参拍名单</strong><span>{{ state.players.length }} 名选手 · {{ state.captains.length }} 位队长</span></div>
+              <span class="prep-status">已载入</span>
+            </article>
+            <article class="prep-item">
+              <span class="prep-index">02</span>
+              <div><strong>队长准备</strong><span>{{ onlineCaptainCount }} / {{ state.captains.length }} 位在线</span></div>
+              <span class="prep-status prep-status--quiet">实时同步</span>
+            </article>
+            <article class="prep-item">
+              <span class="prep-index">03</span>
+              <div><strong>公开竞价</strong><span>倒计时结束后自动落槌</span></div>
+              <span class="prep-status prep-status--quiet">规则已就绪</span>
+            </article>
+          </div>
+        </section>
 
         <div v-if="isAdmin && state.captains?.length" class="captain-online-panel card">
           <h3 class="captain-online-title">队长在线状态</h3>
