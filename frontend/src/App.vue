@@ -24,7 +24,7 @@ async function onLogout() {
 <template>
   <AppBackground />
   <SoundToggle class="global-sound-toggle" />
-  <div v-if="ready" class="shell">
+  <div v-if="ready" class="shell" :class="{ 'shell--history': route.name === 'history' }">
     <nav v-if="user" class="nav card fade-in">
       <RouterLink to="/" class="nav-brand">
         <img src="/logo.svg" alt="" class="nav-logo" />
@@ -91,6 +91,47 @@ async function onLogout() {
   margin: 0 auto;
   padding: 1rem 1.25rem 2rem;
 }
+
+.shell--history {
+  max-width: none;
+  min-height: 100vh;
+  padding: 1rem clamp(1rem, 3vw, 3rem) 3rem;
+  background: #f6f3ed;
+  color: #302b26;
+}
+
+.shell--history .nav {
+  max-width: 1440px;
+  margin: 0 auto 1.5rem;
+  background: #fffefa;
+  border-color: #e8e1d7;
+  box-shadow: 0 3px 14px rgba(64, 45, 29, .045);
+  backdrop-filter: none;
+}
+
+.shell--history .nav-brand-text strong {
+  background: none;
+  color: #302b26;
+  -webkit-text-fill-color: #302b26;
+}
+
+.shell--history .nav-link { color: #746c63; }
+.shell--history .nav-link:hover { background: #f7f1eb; color: #302b26; }
+.shell--history .nav-link.active {
+  background: #f5e7df;
+  color: #a95135;
+  box-shadow: inset 0 0 0 1px #ecd2c5;
+}
+.shell--history .user-tag { color: #746c63; }
+.shell--history .user-dot { background: #729579; box-shadow: 0 0 8px rgba(114, 149, 121, .35); }
+.shell--history .btn-ghost {
+  color: #6f655c;
+  background: #fffefa;
+  border-color: #e2dbd1;
+  backdrop-filter: none;
+}
+.shell--history .btn-ghost:hover { color: #a95135; background: #f8f2ec; border-color: #dcc3b6; }
+.shell--history .main { max-width: 1440px; min-height: 0; margin: 0 auto; }
 
 .nav {
   display: flex;
