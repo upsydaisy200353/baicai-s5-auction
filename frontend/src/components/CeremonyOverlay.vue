@@ -918,4 +918,88 @@ onUnmounted(() => {
 .finale-reset-btn:hover {
   transform: scale(1.03);
 }
+
+/* Warm-paper ceremony intro, aligned with the refreshed application shell. */
+.overlay.intro {
+  background: rgba(244, 239, 230, 0.84);
+  backdrop-filter: blur(10px) saturate(0.88);
+}
+.overlay.intro .overlay-bg {
+  opacity: 0.12;
+  filter: sepia(0.12) saturate(0.72);
+}
+.overlay.intro .overlay-bg::after {
+  background: radial-gradient(ellipse 70% 62% at 50% 38%, rgba(250, 247, 240, 0.18), rgba(245, 242, 236, 0.82));
+}
+.overlay.intro .overlay-card {
+  width: min(92%, 680px);
+  max-height: min(88vh, 820px);
+  overflow-y: auto;
+  padding: clamp(1.5rem, 3vw, 2.35rem) clamp(1.25rem, 3.5vw, 2.75rem);
+  color: #302b26;
+  background: rgba(255, 254, 250, 0.98);
+  border: 1px solid #e6dfd5;
+  border-radius: 22px;
+  box-shadow: 0 24px 64px rgba(61, 47, 33, 0.16);
+}
+.overlay.intro .intro-logo {
+  filter: none;
+}
+.overlay.intro .eyebrow {
+  color: #a95135;
+}
+.overlay.intro .overlay-title {
+  color: #302b26;
+  background: none;
+  -webkit-text-fill-color: #302b26;
+  font-size: clamp(1.65rem, 3vw, 2.1rem);
+  line-height: 1.25;
+}
+.overlay.intro .overlay-desc {
+  color: #786f65;
+}
+.overlay.intro .rule-list {
+  max-width: 550px;
+  margin: 1.1rem auto 1.35rem;
+  color: #61574d;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+.overlay.intro .rule-list li {
+  padding-top: 0.42rem;
+  padding-bottom: 0.42rem;
+}
+.overlay.intro .rule-list li::before {
+  color: #b85c3f;
+}
+.overlay.intro .rule-list strong {
+  color: #a95135;
+}
+.overlay.intro .cap-chip {
+  color: #61574d;
+  background: #faf7f2;
+  border-color: #e6dfd5;
+}
+.overlay.intro .cap-chip small {
+  opacity: 1;
+  color: #a66a2c;
+}
+.overlay.intro .ceremony-btn {
+  min-height: 46px;
+  padding-inline: 2.1rem;
+}
+@media (max-width: 600px) {
+  .overlay.intro {
+    padding: 0.65rem;
+  }
+  .overlay.intro .overlay-card {
+    width: 100%;
+    max-height: calc(100dvh - 1.3rem);
+    padding: 1.25rem 1rem;
+  }
+  .overlay.intro .rule-list {
+    font-size: 0.8rem;
+  }
+}
+
 </style>
