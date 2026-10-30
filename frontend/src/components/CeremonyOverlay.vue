@@ -1005,4 +1005,42 @@ onUnmounted(() => {
   }
 }
 
+
+@media (max-height: 800px) and (min-width: 601px) {
+  .overlay.intro .overlay-card {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+  }
+  .overlay.intro .intro-logo {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.45rem;
+  }
+  .overlay.intro .eyebrow {
+    margin-bottom: 0.25rem;
+  }
+  .overlay.intro .overlay-title {
+    margin-bottom: 0.4rem;
+  }
+  .overlay.intro .overlay-desc {
+    margin-bottom: 0.65rem;
+  }
+  .overlay.intro .rule-list {
+    margin-top: 0.55rem;
+    margin-bottom: 0.7rem;
+    line-height: 1.45;
+  }
+  .overlay.intro .rule-list li {
+    padding-top: 0.22rem;
+    padding-bottom: 0.22rem;
+  }
+  .overlay.intro .captain-preview {
+    gap: 0.3rem;
+    margin-bottom: 0.7rem;
+  }
+  .overlay.intro .cap-chip {
+    padding: 0.2rem 0.5rem;
+  }
+}
+
 </style>
