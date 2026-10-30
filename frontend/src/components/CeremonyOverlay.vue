@@ -921,6 +921,7 @@ onUnmounted(() => {
 
 /* Warm-paper ceremony intro, aligned with the refreshed application shell. */
 .overlay.intro {
+  padding: 5.5rem 1rem 1rem;
   background: rgba(244, 239, 230, 0.84);
   backdrop-filter: blur(10px) saturate(0.88);
 }
@@ -932,8 +933,9 @@ onUnmounted(() => {
   background: radial-gradient(ellipse 70% 62% at 50% 38%, rgba(250, 247, 240, 0.18), rgba(245, 242, 236, 0.82));
 }
 .overlay.intro .overlay-card {
-  width: min(92%, 680px);
-  max-height: min(88vh, 820px);
+  width: min(680px, calc(100vw - 2rem));
+  max-width: min(680px, calc(100vw - 2rem));
+  max-height: min(820px, calc(100dvh - 7rem));
   overflow-y: auto;
   padding: clamp(1.5rem, 3vw, 2.35rem) clamp(1.25rem, 3.5vw, 2.75rem);
   color: #302b26;
@@ -990,11 +992,12 @@ onUnmounted(() => {
 }
 @media (max-width: 600px) {
   .overlay.intro {
-    padding: 0.65rem;
+    padding: 6.5rem 0.65rem 0.8rem;
   }
   .overlay.intro .overlay-card {
     width: 100%;
-    max-height: calc(100dvh - 1.3rem);
+    max-width: none;
+    max-height: calc(100dvh - 7.5rem);
     padding: 1.25rem 1rem;
   }
   .overlay.intro .rule-list {
