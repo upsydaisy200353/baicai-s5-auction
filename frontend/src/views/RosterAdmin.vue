@@ -5,7 +5,6 @@ import {
   createEntry,
   deleteEntry,
   fetchEntries,
-  reseedRoster,
   updateEntry,
 } from '../api/roster'
 import {
@@ -182,16 +181,6 @@ async function addCaptain() {
   }
 }
 
-async function resetDefault() {
-  if (!confirm('恢复为默认名单？当前修改将全部丢失。')) return
-  try {
-    const data = await reseedRoster()
-    entries.value = data.entries
-    message.value = '已恢复默认名单'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '恢复失败'
-  }
-}
 </script>
 
 <template>
@@ -205,7 +194,6 @@ async function resetDefault() {
       </div>
       <div class="actions">
         <button class="btn-ghost" :disabled="loading" @click="load">刷新</button>
-        <button class="btn-danger" :disabled="auctionLocked" @click="resetDefault">恢复默认</button>
       </div>
     </header>
 
