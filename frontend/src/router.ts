@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from './api/client'
 import { fetchMe } from './api/auth'
 import AuctionView from './views/AuctionView.vue'
+import AuctionHistory from './views/AuctionHistory.vue'
 import FeedbackAdmin from './views/FeedbackAdmin.vue'
 import FeedbackView from './views/FeedbackView.vue'
 import RosterAdmin from './views/RosterAdmin.vue'
@@ -15,6 +16,7 @@ export const router = createRouter({
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/spectator', name: 'spectator', component: SpectatorView, meta: { public: true } },
     { path: '/feedback', name: 'feedback', component: FeedbackView, meta: { public: true } },
+    { path: '/history', name: 'history', component: AuctionHistory, meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/', name: 'auction', component: AuctionView, meta: { requiresAuth: true } },
     {
       path: '/admin',
