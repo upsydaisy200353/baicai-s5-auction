@@ -1,6 +1,6 @@
 import { reactive, computed } from 'vue'
 import { getToken, setToken } from '../api/client'
-import { fetchMe, login as apiLogin, type AuthUser } from '../api/auth'
+import { fetchMe, login as apiLogin, logout as apiLogout, type AuthUser } from '../api/auth'
 
 const state = reactive({
   user: null as AuthUser | null,
@@ -36,7 +36,12 @@ export function useAuth() {
     return res.user
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await apiLogout()
+    } catch {
+      // 本地退出仍应完成；服务端在线状态会在心跳超时后过期。
+    }
     setToken(null)
     state.user = null
   }
