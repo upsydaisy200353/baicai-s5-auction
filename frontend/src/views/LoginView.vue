@@ -204,9 +204,9 @@ function enterAsGuest() {
 .hero-bg {
   position: absolute;
   inset: 0;
-  background: url('/images/hero-ceremony-bg.png') center / cover no-repeat;
-  transform: scale(1.02);
-  animation: heroKen 24s ease-in-out infinite alternate;
+  background: linear-gradient(145deg, #eee7dc, #faf7f1);
+  transform: none;
+  animation: none;
 }
 
 .hero-scrim {
@@ -302,9 +302,7 @@ function enterAsGuest() {
   justify-self: center;
   align-self: center;
   width: 100%;
-  background:
-    linear-gradient(160deg, rgba(18, 26, 40, 0.92), rgba(10, 16, 28, 0.88)),
-    url('/images/bg-texture.png') center / cover;
+  background: linear-gradient(160deg, rgba(255, 254, 250, 0.98), rgba(250, 247, 241, 0.96));
   border-color: rgba(255, 255, 255, 0.1);
 }
 
