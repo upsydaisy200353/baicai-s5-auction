@@ -38,15 +38,16 @@ async function onLogout() {
         <RouterLink to="/spectator" class="nav-link" active-class="active">观战大屏</RouterLink>
         <RouterLink v-if="isAdmin" to="/history" class="nav-link" active-class="active">拍卖历史</RouterLink>
         <RouterLink to="/feedback" class="nav-link" active-class="active">意见反馈</RouterLink>
-        <RouterLink v-if="isAdmin" to="/admin" class="nav-link" active-class="active">
-          名单管理
-        </RouterLink>
-        <RouterLink v-if="isAdmin" to="/admin/users" class="nav-link" active-class="active">
-          账号密码
-        </RouterLink>
-        <RouterLink v-if="isAdmin" to="/admin/feedback" class="nav-link" active-class="active">
-          查看反馈
-        </RouterLink>
+        <details v-if="isAdmin" class="nav-menu" :open="route.path.startsWith('/admin')">
+          <summary class="nav-link" :class="{ active: route.path.startsWith('/admin') }">
+            管理工具 <span aria-hidden="true">⌄</span>
+          </summary>
+          <div class="nav-dropdown">
+            <RouterLink to="/admin" class="nav-dropdown-link" active-class="active">名单管理</RouterLink>
+            <RouterLink to="/admin/users" class="nav-dropdown-link" active-class="active">账号与密码</RouterLink>
+            <RouterLink to="/admin/feedback" class="nav-dropdown-link" active-class="active">意见反馈</RouterLink>
+          </div>
+        </details>
       </div>
       <span class="spacer" />
       <span class="user-tag">
