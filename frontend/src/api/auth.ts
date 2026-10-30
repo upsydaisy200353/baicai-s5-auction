@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { apiRequest, setToken } from './client'
 
 export interface AuthUser {
   id: number
@@ -25,7 +25,6 @@ export interface AdminUserRow {
   role: 'admin' | 'captain'
   captainName: string | null
   displayName: string
-  passwordPlain?: string
 }
 
 export function login(username: string, password: string) {
@@ -35,22 +34,30 @@ export function login(username: string, password: string) {
   })
 }
 
-export function changePassword(currentPassword: string, newPassword: string) {
-  return apiRequest<{ ok: boolean }>('/auth/change-password', {
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const result = await apiRequest<{ ok: boolean; token: string }>('/auth/change-password', {
     method: 'POST',
     body: JSON.stringify({ currentPassword, newPassword }),
   })
+  setToken(result.token)
+  return result
 }
 
 export function fetchAdminUsers() {
   return apiRequest<AdminUserRow[]>('/admin/users')
 }
 
-export function adminSetPassword(userId: number, newPassword: string) {
-  return apiRequest<{ ok: boolean; username: string }>(`/admin/users/${userId}/password`, {
+export async function adminSetPassword(userId: number, newPassword: string) {
+  const result = await apiRequest<{ ok: boolean; username: string; token?: string }>(`/admin/users/${userId}/password`, {
     method: 'PUT',
     body: JSON.stringify({ newPassword }),
   })
+  if (result.token) setToken(result.token)
+  return result
+}
+
+export function logout() {
+  return apiRequest<{ ok: boolean }>('/auth/logout', { method: 'POST' })
 }
 
 export function fetchMe() {
