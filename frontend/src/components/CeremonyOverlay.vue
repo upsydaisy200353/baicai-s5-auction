@@ -1043,4 +1043,143 @@ onUnmounted(() => {
   }
 }
 
+
+/* Warm-paper treatment for every post-intro ceremony phase. */
+.overlay:not(.intro) {
+  background: rgba(244, 239, 230, 0.88);
+  backdrop-filter: blur(10px) saturate(0.88);
+}
+.overlay:not(.intro) .overlay-bg {
+  opacity: 0.1;
+  filter: sepia(0.12) saturate(0.72);
+}
+.overlay:not(.intro) .overlay-bg::after {
+  background: radial-gradient(ellipse 72% 64% at 50% 42%, rgba(250, 247, 240, 0.18), rgba(245, 242, 236, 0.84));
+}
+.overlay:not(.intro) .overlay-card {
+  color: #302b26;
+  background: rgba(255, 254, 250, 0.98);
+  border: 1px solid #e6dfd5;
+  box-shadow: 0 24px 64px rgba(61, 47, 33, 0.16);
+}
+.overlay:not(.intro) .eyebrow {
+  color: #a95135;
+}
+.overlay:not(.intro) .overlay-title {
+  color: #302b26;
+  background: none;
+  -webkit-text-fill-color: #302b26;
+}
+.overlay:not(.intro) .overlay-desc {
+  color: #786f65;
+}
+.overlay.draw .draw-card {
+  width: min(600px, calc(100vw - 2rem));
+  max-width: min(600px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+}
+.overlay.draw .draw-rays {
+  background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(184, 92, 63, 0.035) 30deg, transparent 60deg);
+}
+.overlay.draw .slot-frame {
+  background: #faf7f2;
+  border-color: #e6dfd5;
+}
+.overlay.draw .carousel-name {
+  color: #302b26;
+}
+.overlay.draw .carousel-empty {
+  color: #786f65;
+}
+.overlay.draw .dot {
+  background: #b85c3f;
+}
+.overlay.draw .dot.pulse {
+  background: #a66a2c;
+}
+.overlay.winner .winner-announce {
+  color: #302b26;
+  -webkit-text-fill-color: #302b26;
+  line-height: 1.4;
+}
+.overlay.winner .winner-player {
+  color: #a66a2c;
+  background: none;
+  -webkit-text-fill-color: #a66a2c;
+}
+.overlay.winner .winner-cap {
+  color: #52785c;
+}
+.overlay.winner .winner-price-line {
+  color: #a66a2c;
+}
+.overlay.finale .finale-card {
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+}
+.overlay.finale .finale-close {
+  color: #786f65;
+  background: #faf7f2;
+  border-color: #e6dfd5;
+}
+.overlay.finale .finale-close:hover {
+  color: #302b26;
+  background: #f2e9df;
+  border-color: #d8c6b7;
+}
+.overlay.finale .roster-card {
+  color: #302b26;
+  background: #fcfaf6;
+  border-color: #e6dfd5;
+}
+.overlay.finale .roster-funds,
+.overlay.finale .slot-price,
+.overlay.finale .winner-price {
+  color: #a66a2c;
+}
+.overlay.finale .roster-table thead th {
+  color: #786f65;
+  border-bottom-color: #e6dfd5;
+  opacity: 1;
+}
+.overlay.finale .roster-table tbody tr + tr td,
+.overlay.finale .roster-table tbody tr + tr th {
+  border-top-color: #eee8df;
+}
+.overlay.finale .name-cell,
+.overlay.finale .price-cell {
+  color: #61574d;
+}
+.overlay.finale .slot-name {
+  color: #302b26;
+}
+.overlay.finale .slot-tag {
+  background: #f5e7df;
+  color: #a95135;
+}
+.overlay.finale .slot-empty,
+.overlay.finale .price-dash {
+  opacity: 0.55;
+}
+.overlay.finale .unsold-section {
+  border-top-color: #e6dfd5;
+}
+.overlay.finale .finale-reset-btn {
+  color: #fffaf4;
+  background: #a66a2c;
+  box-shadow: 0 4px 14px rgba(166, 106, 44, 0.2);
+  animation: none;
+}
+@media (max-width: 600px) {
+  .overlay.draw .draw-card {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 7.5rem);
+  }
+  .overlay.finale .finale-card {
+    max-height: calc(100dvh - 7.5rem);
+  }
+}
+
 </style>
