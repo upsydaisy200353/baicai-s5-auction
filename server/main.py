@@ -244,8 +244,8 @@ def enrich_auction_state(state: dict) -> dict:
 
 
 def _mask_funds_for_viewer(state: dict, viewer_captain: str | None, is_admin: bool) -> dict:
-    """管理员可见全部资金；队长仅可见自己；观战隐藏全部。"""
-    if is_admin:
+    """拍卖进行中按身份隐藏资金；拍卖结束后公开最终余额。"""
+    if is_admin or state.get("phase") == "finished":
         return state
 
     def mask_captain_list(captains: list[dict]) -> None:
