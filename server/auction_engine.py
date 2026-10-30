@@ -6,6 +6,7 @@ import copy
 import json
 import random
 import time
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -55,6 +56,7 @@ class AuctionEngine:
 
     def reset(self) -> None:
         self.phase = "idle"
+        self.auction_id: str | None = None
         self.captains: list[dict] = []
         self.players: list[dict] = []
         self.captain_names: set[str] = set()
@@ -108,6 +110,7 @@ class AuctionEngine:
         return json.dumps(
             {
                 "phase": self.phase,
+                "auctionId": self.auction_id,
                 "captains": self.captains,
                 "players": self.players,
                 "captainNames": list(self.captain_names),
@@ -141,6 +144,7 @@ class AuctionEngine:
     def deserialize(self, raw: str) -> None:
         data = json.loads(raw)
         self.phase = data.get("phase", "idle")
+        self.auction_id = data.get("auctionId")
         self.captains = data.get("captains", [])
         self.players = data.get("players", [])
         self.captain_names = set(data.get("captainNames", []))
@@ -210,11 +214,14 @@ class AuctionEngine:
             if p.get("winner") is None:
                 p["winner"] = None
 
-    def add_log(self, text: str, log_type: str = "info") -> None:
+    def add_log(
+        self, text: str, log_type: str = "info", *, real_text: str | None = None
+    ) -> None:
         self._log_id += 1
-        self.logs.append(
-            {"id": self._log_id, "time": _now_time(), "text": text, "type": log_type}
-        )
+        entry = {"id": self._log_id, "time": _now_time(), "text": text, "type": log_type}
+        if real_text is not None:
+            entry["realText"] = real_text
+        self.logs.append(entry)
 
     def alias_for(self, captain_name: str | None) -> str | None:
         if not captain_name:
@@ -535,6 +542,7 @@ class AuctionEngine:
                 f"{self.bid_extension_seconds}s 内无人加价 — "
                 f"{self._label(self.current_leader)} 以 {self.current_price}w 拍得",
                 "phase",
+                real_text=f"{self.current_leader} 以 {self.current_price}w 拍得",
             )
             self._complete_sale(cap, self.current_price)
             return
@@ -549,6 +557,7 @@ class AuctionEngine:
         self._maybe_hammer()
         return {
             "phase": self.phase,
+            "auctionId": self.auction_id,
             "captains": copy.deepcopy(self.captains),
             "players": copy.deepcopy(self.players),
             "poolOrder": list(self.pool_order),
@@ -589,6 +598,7 @@ class AuctionEngine:
             p["winner"] = None
         for c in self.captains:
             c["team"] = []
+        self.auction_id = str(uuid.uuid4())
         self.phase = "intro"
         self.add_log("公开叫价选人仪式开始", "phase")
         self.add_log("从全部可拍卖选手中按权重随机抽取", "info")
@@ -623,7 +633,7 @@ class AuctionEngine:
             original = int(p.get("originalStartPrice") or p.get("startPrice") or MIN_BID)
             boosted = max(MIN_BID, int(round(original * UNSOLD_PRICE_MULTIPLIER)))
             p["startPrice"] = boosted
-            p["inUnsoldPool"] = False
+            p["inUnsoldPool"] = True
         self.auction_stage = "unsold"
         self.add_log(
             f"主池已空 — 流拍池二次拍卖启动（起拍价 = 初始价 ×{UNSOLD_PRICE_MULTIPLIER}）",
@@ -726,7 +736,7 @@ class AuctionEngine:
                 return f"不能参与本场竞拍（{reason}）"
             self.passed_captains.add(captain_name)
             self.captain_bids.setdefault(captain_name, None)
-            self.add_log(f"[{label}] 放弃本轮竞拍", "info")
+            self.add_log(f"[{label}] 放弃本轮竞拍", "info", real_text=f"[{captain_name}] 放弃本轮竞拍")
             return None
 
         if action not in ("bid", "buyout"):
@@ -753,7 +763,7 @@ class AuctionEngine:
                 return "出价超出剩余资金"
             self.used_buyout.add(captain_name)
             self._record_bid(captain_name, buyout)
-            self.add_log(f"[{label}] 一口价 {buyout}w！", "buyout")
+            self.add_log(f"[{label}] 一口价 {buyout}w！", "buyout", real_text=f"[{captain_name}] 一口价 {buyout}w！")
             cap = next(c for c in self.captains if c["name"] == captain_name)
             self._complete_sale(cap, buyout)
             return None
@@ -764,7 +774,7 @@ class AuctionEngine:
             return "出价超出剩余资金"
 
         self._record_bid(captain_name, amount)
-        self.add_log(f"[{label}] 出价 {amount}w", "bid")
+        self.add_log(f"[{label}] 出价 {amount}w", "bid", real_text=f"[{captain_name}] 出价 {amount}w")
         return None
 
     def hammer(self) -> str | None:
@@ -776,6 +786,7 @@ class AuctionEngine:
         self.add_log(
             f"管理员落槌 — {self._label(self.current_leader)} · {self.current_price}w",
             "phase",
+            real_text=f"管理员落槌 — {self.current_leader} · {self.current_price}w",
         )
         self._complete_sale(cap, self.current_price)
         return None
@@ -801,8 +812,14 @@ class AuctionEngine:
 
     def _show_winner_reveal(self, player: dict, winner: str | None, price: int | None) -> None:
         if winner is None:
-            self._move_to_unsold_pool(player)
-            player = next(p for p in self.players if p["serial"] == player["serial"])
+            if self.auction_stage == "unsold":
+                target = next(p for p in self.players if p["serial"] == player["serial"])
+                target["excluded"] = True
+                target["inUnsoldPool"] = False
+                player = target
+            else:
+                self._move_to_unsold_pool(player)
+                player = next(p for p in self.players if p["serial"] == player["serial"])
         self.last_result = {
             "player": copy.deepcopy(player),
             "winner": winner,
@@ -815,7 +832,10 @@ class AuctionEngine:
             self.add_log(
                 f"成交：{self._label(winner)} 以 {price}w 签下 {player['name']}",
                 "win",
+                real_text=f"成交：{winner} 以 {price}w 签下 {player['name']}",
             )
+        elif self.auction_stage == "unsold":
+            self.add_log(f"二次拍卖流拍：{player['name']} — 本场不再重拍", "warn")
         else:
             self.add_log(f"流拍：{player['name']} — 进入流拍池", "warn")
 
