@@ -57,10 +57,6 @@ const unsoldPlayers = computed(() =>
   (props.players ?? []).filter((p) => p.excluded || p.inUnsoldPool),
 )
 
-const allTeamsRevealed = computed(
-  () => finaleRevealIndex.value >= finaleRosters.value.length - 1,
-)
-
 watch(
   () => props.phase,
   (phase) => {
