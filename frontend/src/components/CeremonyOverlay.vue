@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { POSITION_COLORS, POSITION_SHORT } from '../constants'
+import { MIN_INCREMENT, POSITION_COLORS, POSITION_SHORT } from '../constants'
 import { playSound, unlockAudio } from '../lib/soundEngine'
 import { buildCaptainRosterSlots } from '../rosterUtils'
 import PlayerAvatar from './PlayerAvatar.vue'
-import type { Captain, LastResult, Player, Position } from '../types'
+import type { AuctionSettings, Captain, LastResult, Player, Position } from '../types'
 
 const props = defineProps<{
   phase: string
@@ -16,6 +16,7 @@ const props = defineProps<{
   pendingPick: Player | null
   lastResult: LastResult | null
   isAdmin?: boolean
+  auctionSettings?: AuctionSettings
 }>()
 
 const emit = defineEmits<{
@@ -192,9 +193,9 @@ onUnmounted(() => {
       <ul class="rule-list">
         <li>从全部可拍卖选手中按<strong>权重</strong>全局随机抽取</li>
         <li>所有队长<strong>同时</strong>公开叫价，价高者得；队长彼此匿名</li>
-        <li>每次加价后重置 <strong>30 秒</strong>倒计时；无人继续加价则落槌</li>
-        <li>每次加价至少 <strong>10w</strong>；支持一口价秒拍（每位队长整场仅一次）</li>
-        <li>若<strong>60 秒</strong>内尚无人出价则进入流拍池，主池结束后以初始价 ×1.25 重拍</li>
+        <li>每次加价后重置 <strong>{{ props.auctionSettings?.bidExtensionSeconds ?? 30 }} 秒</strong>倒计时；无人继续加价则落槌</li>
+        <li>每次加价至少 <strong>{{ MIN_INCREMENT }}w</strong>；支持一口价秒拍（每位队长整场仅一次）</li>
+        <li>若<strong>{{ props.auctionSettings?.noBidTimeoutSeconds ?? 60 }} 秒</strong>内尚无人出价则进入流拍池，主池结束后以初始价 ×1.25 重拍</li>
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
       </ul>
       <div class="captain-preview">
