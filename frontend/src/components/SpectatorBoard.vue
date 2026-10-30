@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { POSITION_COLORS, POSITION_NAMES, POSITION_TO_LETTER } from '../constants'
+import { POOL_LETTERS, POSITION_COLORS, POSITION_NAMES, POSITION_SHORT, POSITION_TO_LETTER } from '../constants'
 import { phaseLabel } from '../auctionEngine'
 import PlayerAvatar from './PlayerAvatar.vue'
+import { buildCaptainRosterSlots } from '../rosterUtils'
 import type {
   AuctionPhase,
   Captain,
@@ -30,7 +31,6 @@ const props = defineProps<{
 const secondsLeft = ref(0)
 let tickTimer: ReturnType<typeof setInterval> | null = null
 let lastFetchTime = Date.now()
-let serverTimeOffset = 0  // 服务器时间 - 客户端时间 的偏移量
 
 function updateTimer() {
   if (!props.openBid?.deadlineMs) {
@@ -49,7 +49,6 @@ watch(
   (ms) => {
     if (ms) {
       lastFetchTime = Date.now()
-      serverTimeOffset = ms - Date.now()
     }
   },
   { immediate: true },
@@ -172,6 +171,17 @@ const purchasedPlayers = computed(() => {
   return result
 })
 
+const finalTeams = computed(() =>
+  props.captains.map((captain) => ({
+    captain,
+    slots: buildCaptainRosterSlots(captain, props.players),
+  })),
+)
+const finalSoldCount = computed(() => props.players.filter((player) => player.sold).length)
+const finalUnsoldPlayers = computed(() =>
+  props.players.filter((player) => !player.sold && (player.excluded || player.inUnsoldPool)),
+)
+
 const leaderName = computed(() => props.openBid?.currentLeader)
 const leaderPrice = computed(() => props.openBid?.currentPrice ?? 0)
 const leaderCaptain = computed(() => props.openBid?.leaderCaptain)
@@ -188,7 +198,7 @@ function posLabel(position: Position | null | undefined) {
       <div class="header-brand">
         <img src="/logo.svg" alt="" class="brand-logo" />
         <div>
-          <p class="brand-eyebrow">BAICAI CUP · LIVE AUCTION</p>
+          <p class="brand-eyebrow">{{ phase === 'finished' ? 'BAICAI CUP · S6 · FINAL RESULTS' : 'BAICAI CUP · LIVE AUCTION' }}</p>
           <h1 class="brand-title">公开叫价 · 观战大屏</h1>
         </div>
       </div>
@@ -200,7 +210,68 @@ function posLabel(position: Position | null | undefined) {
       </div>
     </header>
 
-    <div class="board-grid">
+    <main v-if="phase === 'finished'" class="final-results">
+      <section class="final-overview card">
+        <div class="final-mark"><img src="/logo.svg" alt="" /></div>
+        <div class="final-heading">
+          <p class="final-eyebrow">BAICAI CUP · S6</p>
+          <h2>本场最终阵容</h2>
+          <p>拍卖流程已结束，按队伍查看签约位置与成交价。</p>
+        </div>
+        <div class="final-metrics" aria-label="拍卖结果汇总">
+          <div><strong>{{ finalSoldCount }}</strong><span>成交</span></div>
+          <div><strong>{{ finalUnsoldPlayers.length }}</strong><span>未成交</span></div>
+          <div><strong>{{ players.length }}</strong><span>参拍选手</span></div>
+        </div>
+        <a v-if="isAdmin" class="history-link" href="/history">查看完整竞拍流程 <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="final-team-grid" aria-label="各队最终阵容">
+        <article v-for="({ captain, slots }) in finalTeams" :key="captain.name" class="final-team card">
+          <header class="final-team-head">
+            <PlayerAvatar
+              :name="captain.name"
+              :avatar="captain.avatar"
+              :position="POOL_LETTERS[captain.poolLetter]"
+              size="md"
+            />
+            <div class="final-captain-info">
+              <p>队长 · {{ POSITION_NAMES[POOL_LETTERS[captain.poolLetter]] }}</p>
+              <h3>{{ captain.name }}</h3>
+            </div>
+            <div class="final-funds"><span>余额</span><strong>{{ captain.funds }}w</strong></div>
+          </header>
+          <div class="final-slot-list">
+            <div v-for="slot in slots" :key="slot.position" class="final-slot">
+              <span class="final-position" :style="{ '--position-color': POSITION_COLORS[slot.position] }">
+                {{ POSITION_SHORT[slot.position] }}
+              </span>
+              <span class="final-player-name">
+                {{ slot.name || '未签约' }}
+                <small v-if="slot.isCaptain">队长</small>
+              </span>
+              <span class="final-price">{{ slot.isCaptain ? '队长位' : slot.price != null ? `${slot.price}w` : '—' }}</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <details v-if="finalUnsoldPlayers.length" class="final-unsold card">
+        <summary>
+          <span>未成交选手</span>
+          <span class="unsold-count">{{ finalUnsoldPlayers.length }} 人 · 展开名单</span>
+        </summary>
+        <div class="final-unsold-list">
+          <div v-for="player in finalUnsoldPlayers" :key="player.serial" class="unsold-row">
+            <span class="unsold-serial">{{ player.serial }}</span>
+            <span class="unsold-name">{{ player.name }}</span>
+            <span class="unsold-position">{{ POSITION_NAMES[player.position] }}</span>
+          </div>
+        </div>
+      </details>
+    </main>
+
+    <div v-else class="board-grid">
       <!-- 左侧：队长实时出价 -->
       <section class="panel captains-panel card">
         <h2 class="panel-title">队长出价板</h2>
@@ -450,6 +521,101 @@ function posLabel(position: Position | null | undefined) {
   .board-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.final-results {
+  display: grid;
+  gap: 1rem;
+}
+
+.final-overview {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.15rem 1.35rem;
+  border-color: rgba(245, 197, 66, 0.22);
+  background: linear-gradient(105deg, rgba(245, 197, 66, 0.075), rgba(12, 18, 30, 0.88) 38%);
+}
+
+.final-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: rgba(245, 197, 66, 0.1);
+  border: 1px solid rgba(245, 197, 66, 0.23);
+}
+
+.final-mark img { width: 34px; height: 34px; }
+.final-eyebrow { color: var(--gold); font: 700 .65rem var(--font-display); letter-spacing: .14em; }
+.final-heading h2 { margin-top: .1rem; font-size: 1.25rem; font-weight: 850; color: var(--text); }
+.final-heading > p:last-child { margin-top: .2rem; color: var(--text-muted); font-size: .8rem; }
+
+.final-metrics { display: flex; gap: .55rem; }
+.final-metrics > div { min-width: 4.4rem; padding: .48rem .62rem; display: grid; justify-items: center; gap: .05rem; border: 1px solid var(--border); border-radius: 10px; background: rgba(5, 10, 18, .36); }
+.final-metrics strong { color: var(--gold-bright); font: 800 1.2rem var(--font-display); }
+.final-metrics span { color: var(--text-muted); font-size: .67rem; }
+.history-link { display: inline-flex; align-items: center; gap: .4rem; padding: .65rem .85rem; border-radius: 9px; border: 1px solid rgba(245, 197, 66, .32); color: var(--gold-bright); text-decoration: none; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+.history-link:hover { background: rgba(245, 197, 66, .1); }
+
+.final-team-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+  align-items: stretch;
+}
+
+.final-team { min-width: 0; padding: .85rem; }
+.final-team-head { display: flex; align-items: center; gap: .65rem; min-width: 0; padding-bottom: .7rem; border-bottom: 1px solid var(--border); }
+.final-captain-info { min-width: 0; flex: 1; }
+.final-captain-info p { color: var(--text-muted); font-size: .67rem; }
+.final-captain-info h3 { color: var(--gold-bright); font-size: .98rem; font-weight: 850; line-height: 1.25; overflow-wrap: anywhere; }
+.final-funds { display: grid; justify-items: end; flex: 0 0 auto; }
+.final-funds span { color: var(--text-muted); font-size: .65rem; }
+.final-funds strong { color: var(--text); font-size: .82rem; font-variant-numeric: tabular-nums; }
+.final-slot-list { display: grid; gap: .22rem; padding-top: .55rem; }
+.final-slot { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: .4rem; min-height: 1.85rem; }
+.final-position { display: inline-grid; place-items: center; width: 1.7rem; height: 1.45rem; color: var(--position-color); border: 1px solid color-mix(in srgb, var(--position-color) 30%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--position-color) 10%, transparent); font-size: .63rem; font-weight: 800; }
+.final-player-name { min-width: 0; color: var(--text); font-size: .76rem; line-height: 1.3; overflow-wrap: anywhere; }
+.final-player-name small { margin-left: .25rem; color: var(--text-muted); font-size: .6rem; }
+.final-price { color: var(--text-muted); font-size: .68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.final-unsold { padding: .85rem 1rem; }
+.final-unsold summary { display: flex; justify-content: space-between; align-items: center; gap: .75rem; color: var(--text); font-weight: 750; cursor: pointer; list-style: none; }
+.final-unsold summary::-webkit-details-marker { display: none; }
+.final-unsold summary::after { content: '＋'; color: var(--gold); }
+.final-unsold[open] summary::after { content: '−'; }
+.unsold-count { margin-left: auto; color: var(--text-muted); font-size: .75rem; font-weight: 500; }
+.final-unsold-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem .6rem; padding-top: .75rem; }
+.unsold-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .4rem; align-items: baseline; padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 7px; background: rgba(255, 255, 255, .02); }
+.unsold-serial, .unsold-position { color: var(--text-muted); font-size: .64rem; white-space: nowrap; }
+.unsold-name { min-width: 0; color: var(--text); font-size: .72rem; overflow-wrap: anywhere; }
+
+@media (max-width: 1200px) {
+  .final-team-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .final-unsold-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .final-overview { grid-template-columns: auto minmax(180px, 1fr) auto; }
+  .history-link { grid-column: 2 / -1; justify-self: end; }
+}
+
+@media (max-width: 820px) {
+  .final-team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .final-unsold-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .final-overview { grid-template-columns: auto minmax(0, 1fr); }
+  .final-metrics { grid-column: 1 / -1; justify-content: space-between; }
+  .history-link { grid-column: 1 / -1; justify-self: stretch; justify-content: center; }
+}
+
+@media (max-width: 560px) {
+  .final-team-grid, .final-unsold-list { grid-template-columns: 1fr; }
+  .final-overview { padding: .9rem; gap: .7rem; }
+  .final-mark { width: 42px; height: 42px; }
+  .final-heading h2 { font-size: 1.05rem; }
+  .final-heading > p:last-child { font-size: .72rem; }
+  .final-metrics > div { flex: 1; min-width: 0; }
+  .final-team { padding: .75rem; }
 }
 
 .panel {
