@@ -530,7 +530,7 @@ def _bootstrap_storage() -> None:
 
 async def _auction_tick_loop() -> None:
     while True:
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.2)
         try:
             with auction_lock:
                 if auction.tick():
