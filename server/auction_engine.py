@@ -481,7 +481,8 @@ class AuctionEngine:
         buyout = self._player_buyout_price()
         captain_rows = []
         for cap in self.captains:
-            can_bid = self.captain_can_bid(cap, position)
+            is_leader = cap["name"] == self.current_leader
+            can_bid = self.captain_can_bid(cap, position) and not is_leader
             buyout_used = cap["name"] in self.used_buyout
             can_buyout = (
                 bool(buyout)
@@ -495,11 +496,15 @@ class AuctionEngine:
                     "alias": self.captain_aliases.get(cap["name"]),
                     "funds": cap["funds"],
                     "latestBid": self.captain_bids.get(cap["name"]),
-                    "isLeader": cap["name"] == self.current_leader,
+                    "isLeader": is_leader,
                     "canBid": can_bid,
                     "canBuyout": can_buyout,
                     "buyoutUsed": buyout_used,
-                    "skipReason": self.captain_skip_reason(cap, position),
+                    "skipReason": (
+                        "当前由你领先，等待其他队长加价"
+                        if is_leader
+                        else self.captain_skip_reason(cap, position)
+                    ),
                     "passed": cap["name"] in self.passed_captains,
                 }
             )
@@ -720,9 +725,12 @@ class AuctionEngine:
         captain_name: str,
         action: str,
         amount: int | None = None,
+        expected_player_serial: str | None = None,
     ) -> str | None:
         if self.phase != "open_bid" or not self.current_player:
             return "当前不在公开叫价阶段"
+        if expected_player_serial and self.current_player.get("serial") != expected_player_serial:
+            return "当前拍卖选手已变化，请刷新后重新操作"
 
         cap = next((c for c in self.captains if c["name"] == captain_name), None)
         if not cap:
@@ -730,6 +738,8 @@ class AuctionEngine:
 
         position = self.current_player["position"]
         label = self._label(captain_name)
+        if captain_name == self.current_leader:
+            return "当前由你领先，等待其他队长加价"
         if action == "pass":
             if not self.captain_can_bid(cap, position) and captain_name not in self.passed_captains:
                 reason = self.captain_skip_reason(cap, position)
