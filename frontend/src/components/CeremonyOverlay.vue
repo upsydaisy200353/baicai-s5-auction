@@ -13,6 +13,8 @@ const props = defineProps<{
   currentPool: Position | null
   poolOrder: Position[]
   drawCandidates: Player[]
+  drawStartedAtMs?: number | null
+  serverTimeMs?: number
   pendingPick: Player | null
   lastResult: LastResult | null
   isAdmin?: boolean
@@ -35,8 +37,13 @@ const hasDrawn = ref(false)
 const finaleDismissed = ref(false)
 const finaleRevealIndex = ref(-1)  // 逐队揭晓索引，-1 表示尚未开始
 let spinTimer: ReturnType<typeof setInterval> | null = null
-let revealTimer: ReturnType<typeof setTimeout> | null = null
 let finaleRevealTimer: ReturnType<typeof setTimeout> | null = null
+let serverAnchorMs = props.serverTimeMs ?? Date.now()
+let monotonicAnchorMs = performance.now()
+let lastDrawTick = -1
+let revealRequested = false
+const DRAW_SPIN_MS = 2240
+const DRAW_REVEAL_MS = 5000
 
 const currentCarouselPlayer = computed(() => {
   const list = props.drawCandidates
@@ -83,58 +90,57 @@ watch(
   },
 )
 
-function startCarousel() {
+function estimatedServerNowMs() {
+  return serverAnchorMs + Math.max(0, performance.now() - monotonicAnchorMs)
+}
+
+watch(
+  () => props.serverTimeMs,
+  (serverTimeMs) => {
+    if (typeof serverTimeMs !== 'number' || !Number.isFinite(serverTimeMs)) return
+    const now = performance.now()
+    const predicted = serverAnchorMs + Math.max(0, now - monotonicAnchorMs)
+    serverAnchorMs = Math.max(predicted, serverTimeMs)
+    monotonicAnchorMs = now
+  },
+  { immediate: true },
+)
+
+function updateCarousel() {
   const list = props.drawCandidates
-  if (!list.length) {
-    if (props.isAdmin) emit('revealDraw')
+  if (props.phase !== 'pool_draw' || !list.length || !props.drawStartedAtMs) {
+    stopCarousel()
+    revealing.value = false
     return
   }
 
-  stopCarousel()
-  stopReveal()
-  spinning.value = true
-  revealing.value = false
-  hasDrawn.value = false
-  carouselIndex.value = 0
-  let tick = 0
-  const totalTicks = 28
+  const elapsed = Math.max(0, estimatedServerNowMs() - props.drawStartedAtMs)
+  const tick = Math.floor(elapsed / 80)
+  if (elapsed < DRAW_SPIN_MS) {
+    spinning.value = true
+    revealing.value = false
+    hasDrawn.value = false
+    carouselIndex.value = tick % list.length
+    if (tick !== lastDrawTick && tick % 4 === 0) emit('drawTick')
+    lastDrawTick = tick
+    return
+  }
 
-  spinTimer = setInterval(() => {
-    carouselIndex.value = (carouselIndex.value + 1) % list.length
-    tick++
-    if (tick % 4 === 0) emit('drawTick')
-    if (tick >= totalTicks) {
-      stopCarousel()
-      startReveal()
-    }
-  }, 80)
+  spinning.value = false
+  revealing.value = true
+  hasDrawn.value = true
+  const idx = list.findIndex((p) => p.serial === props.pendingPick?.serial)
+  if (idx >= 0) carouselIndex.value = idx
+  if (elapsed >= DRAW_SPIN_MS + DRAW_REVEAL_MS && props.isAdmin && !revealRequested) {
+    revealRequested = true
+    emit('revealDraw')
+  }
 }
 
 function stopCarousel() {
   if (spinTimer) clearInterval(spinTimer)
   spinTimer = null
   spinning.value = false
-}
-
-function startReveal() {
-  revealing.value = true
-  hasDrawn.value = true
-  if (props.pendingPick) {
-    const idx = props.drawCandidates.findIndex((p) => p.name === props.pendingPick?.name)
-    if (idx >= 0) {
-      carouselIndex.value = idx
-    }
-  }
-  revealTimer = setTimeout(() => {
-    stopReveal()
-    if (props.isAdmin) emit('revealDraw')
-  }, 5000)
-}
-
-function stopReveal() {
-  if (revealTimer) clearTimeout(revealTimer)
-  revealTimer = null
-  revealing.value = false
 }
 
 function onBegin() {
@@ -163,15 +169,16 @@ function onDismissFinale() {
 }
 
 watch(
-  () => [props.phase, props.drawCandidates.length] as const,
+  () => [props.phase, props.drawCandidates.length, props.drawStartedAtMs] as const,
   ([phase]) => {
     if (phase === 'pool_draw') {
-      if (!spinning.value && !spinTimer && !hasDrawn.value) {
-        setTimeout(startCarousel, 400)
-      }
+      revealRequested = false
+      lastDrawTick = -1
+      updateCarousel()
+      if (!spinTimer) spinTimer = setInterval(updateCarousel, 80)
     } else {
       stopCarousel()
-      stopReveal()
+      revealing.value = false
       hasDrawn.value = false
       carouselIndex.value = 0
     }
