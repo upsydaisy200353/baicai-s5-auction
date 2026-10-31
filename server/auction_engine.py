@@ -158,6 +158,8 @@ class AuctionEngine:
         self.current_player = data.get("currentPlayer")
         self.draw_candidates = data.get("drawCandidates", [])
         self.draw_started_at_ms = int(data.get("drawStartedAtMs", 0) or 0)
+        if self.phase == "pool_draw" and not self.draw_started_at_ms:
+            self.draw_started_at_ms = int(time.time() * 1000)
         self.last_result = data.get("lastResult")
         self.logs = data.get("logs", [])
         self._log_id = data.get("_logId", 0)
