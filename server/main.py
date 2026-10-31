@@ -6,6 +6,8 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from functools import wraps
+from threading import RLock
 from pathlib import Path
 from typing import Literal
 
@@ -92,6 +94,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+auction_lock = RLock()
+
+
+def _serialize_auction_mutation(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with auction_lock:
+            return func(*args, **kwargs)
+
+    return wrapped
+
 
 class LoginPayload(BaseModel):
     username: str = Field(min_length=1, max_length=64)
@@ -145,6 +158,7 @@ class OpenBidPayload(BaseModel):
     action: Literal["bid", "pass", "buyout"]
     amount: int | None = Field(default=None, ge=1)
     captainName: str | None = None
+    playerSerial: str = Field(min_length=1, max_length=64)
 
 
 class AuctionSettingsPayload(BaseModel):
@@ -358,7 +372,11 @@ def _mask_captain_names_for_viewer(
 
 
 def auction_state_response(user: dict | None = None, *, persist: bool = False) -> dict:
-    state = enrich_auction_state(auction.to_state())
+    with auction_lock:
+        state = enrich_auction_state(auction.to_state())
+        should_persist = persist or auction.is_in_progress()
+        if should_persist:
+            persist_auction_state()
     import time as _time
     state["serverTimeMs"] = int(_time.time() * 1000)
     is_admin = bool(user and user.get("role") == "admin")
@@ -381,8 +399,6 @@ def auction_state_response(user: dict | None = None, *, persist: bool = False) -
                 }
     masked["captainOnline"] = captain_online
     
-    if persist or auction.is_in_progress():
-        persist_auction_state()
     return masked
 
 
@@ -516,8 +532,9 @@ async def _auction_tick_loop() -> None:
     while True:
         await asyncio.sleep(1)
         try:
-            if auction.tick():
-                persist_auction_state()
+            with auction_lock:
+                if auction.tick():
+                    persist_auction_state()
         except Exception as exc:
             print(f"Auction tick error: {exc}")
 
@@ -770,6 +787,7 @@ def auction_latest_result():
 
 
 @app.post("/api/auction/start")
+@_serialize_auction_mutation
 def auction_start(_user: dict = Depends(require_admin)):
     load_auction_from_db()
     auction.start()
@@ -777,12 +795,14 @@ def auction_start(_user: dict = Depends(require_admin)):
 
 
 @app.post("/api/auction/begin")
+@_serialize_auction_mutation
 def auction_begin(_user: dict = Depends(require_admin)):
     auction.begin_draw()
     return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/select-pool")
+@_serialize_auction_mutation
 def auction_select_pool(
     payload: PoolSelectPayload,
     _user: dict = Depends(require_admin),
@@ -794,12 +814,14 @@ def auction_select_pool(
 
 
 @app.post("/api/auction/reveal-draw")
+@_serialize_auction_mutation
 def auction_reveal_draw(_user: dict = Depends(require_admin)):
     auction.reveal_draw()
     return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/hammer")
+@_serialize_auction_mutation
 def auction_hammer(_user: dict = Depends(require_admin)):
     err = auction.hammer()
     if err:
@@ -808,15 +830,19 @@ def auction_hammer(_user: dict = Depends(require_admin)):
 
 
 @app.post("/api/auction/confirm-winner")
+@_serialize_auction_mutation
 def auction_confirm_winner(_user: dict = Depends(require_admin)):
     auction.confirm_winner()
     return auction_state_response(_user, persist=True)
 
 
 @app.post("/api/auction/bid")
+@_serialize_auction_mutation
 def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or_admin)):
     if auction.phase != "open_bid":
         raise HTTPException(400, "当前不在公开叫价阶段")
+    if not auction.current_player or payload.playerSerial != auction.current_player.get("serial"):
+        raise HTTPException(409, "当前拍卖选手已变化，请刷新页面后重试")
 
     if user["role"] == "admin":
         captain_name = payload.captainName
@@ -834,6 +860,7 @@ def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or
         captain_name,
         payload.action,
         amount=payload.amount,
+        expected_player_serial=payload.playerSerial,
     )
     if err:
         raise HTTPException(400, err)
@@ -841,6 +868,7 @@ def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or
 
 
 @app.post("/api/auction/settings")
+@_serialize_auction_mutation
 def auction_settings(
     payload: AuctionSettingsPayload,
     _user: dict = Depends(require_admin),
@@ -850,6 +878,7 @@ def auction_settings(
 
 
 @app.post("/api/auction/reset")
+@_serialize_auction_mutation
 def auction_reset(_user: dict = Depends(require_admin)):
     # 先回到 idle，再从名单库重载，保证下一轮资金与队伍状态干净
     auction.reset_ceremony()
