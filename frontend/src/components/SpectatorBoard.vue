@@ -1006,4 +1006,22 @@ function posLabel(position: Position | null | undefined) {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border);
 }
+
+
+/* Keep auction figures crisp and aligned while display headings retain the serif style. */
+.price-value,
+.price-value small,
+.leader-bid,
+.bid-amt,
+.feed-amt,
+.timer-num,
+.final-metrics strong {
+  font-family: 'Segoe UI', 'Arial', 'Microsoft YaHei', sans-serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum' 1, 'tnum' 1;
+  font-weight: 700;
+}
+
+.price-value { letter-spacing: 0.01em; }
+.price-value small { font-size: 1.25rem; letter-spacing: 0; }
 </style>
