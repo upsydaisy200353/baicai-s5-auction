@@ -27,6 +27,7 @@ export interface ServerAuctionState {
   openBid: OpenBidContext | null
   logs: LogEntry[]
   drawCandidates: Player[]
+  drawStartedAtMs?: number | null
   lastResult: LastResult | null
   availablePools: Position[]
   auctionSettings?: AuctionSettings
