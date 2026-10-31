@@ -278,4 +278,15 @@ function onPass() {
   font-size: 0.8125rem;
   color: var(--red);
 }
+
+
+/* Use readable, tabular sans-serif figures for auction prices and bid controls. */
+.panel-hint strong,
+.btn-quick,
+.btn-buyout,
+.bid-input {
+  font-family: 'Segoe UI', 'Arial', 'Microsoft YaHei', sans-serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum' 1, 'tnum' 1;
+}
 </style>
