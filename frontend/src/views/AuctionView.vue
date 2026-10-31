@@ -234,6 +234,8 @@ async function onBuyout(playerSerial: string) {
         :current-pool="state.currentPool"
         :pool-order="state.poolOrder"
         :draw-candidates="state.drawCandidates"
+        :draw-started-at-ms="state.drawStartedAtMs"
+        :server-time-ms="state.serverTimeMs"
         :pending-pick="state.pendingPick"
         :last-result="state.lastResult"
          :is-admin="isAdmin"
