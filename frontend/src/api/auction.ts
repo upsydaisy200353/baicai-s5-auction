@@ -39,8 +39,19 @@ export interface ServerAuctionState {
   serverTimeMs?: number
 }
 
+async function withServerTimeEstimate(
+  request: () => Promise<ServerAuctionState>,
+): Promise<ServerAuctionState> {
+  const requestStartedAt = performance.now()
+  const state = await request()
+  if (typeof state.serverTimeMs === 'number') {
+    state.serverTimeMs += Math.round((performance.now() - requestStartedAt) / 2)
+  }
+  return state
+}
+
 export function fetchAuctionState() {
-  return apiRequest<ServerAuctionState>('/auction/state')
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/state'))
 }
 
 /** 观战大屏 — 无需登录 */
@@ -81,7 +92,8 @@ export function fetchLatestAuctionResult() {
 }
 
 export function fetchSpectatorState() {
-  return fetch('/api/auction/spectator').then(async (res) => {
+  return withServerTimeEstimate(async () => {
+    const res = await fetch('/api/auction/spectator')
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail ?? `HTTP ${res.status}`)
@@ -91,42 +103,42 @@ export function fetchSpectatorState() {
 }
 
 export function startAuction() {
-  return apiRequest<ServerAuctionState>('/auction/start', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/start', { method: 'POST' }))
 }
 
 export function beginCeremony() {
-  return apiRequest<ServerAuctionState>('/auction/begin', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/begin', { method: 'POST' }))
 }
 
 export function revealDraw() {
-  return apiRequest<ServerAuctionState>('/auction/reveal-draw', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/reveal-draw', { method: 'POST' }))
 }
 
 export function hammerAuction() {
-  return apiRequest<ServerAuctionState>('/auction/hammer', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/hammer', { method: 'POST' }))
 }
 
 export function confirmWinner() {
-  return apiRequest<ServerAuctionState>('/auction/confirm-winner', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/confirm-winner', { method: 'POST' }))
 }
 
 export function submitOpenBid(
   action: 'bid' | 'pass' | 'buyout',
   opts?: { amount?: number; captainName?: string },
 ) {
-  return apiRequest<ServerAuctionState>('/auction/bid', {
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/bid', {
     method: 'POST',
     body: JSON.stringify({ action, ...opts }),
-  })
+  }))
 }
 
 export function resetAuction() {
-  return apiRequest<ServerAuctionState>('/auction/reset', { method: 'POST' })
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/reset', { method: 'POST' }))
 }
 
 export function updateAuctionSettings(settings: AuctionSettings) {
-  return apiRequest<ServerAuctionState>('/auction/settings', {
+  return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/settings', {
     method: 'POST',
     body: JSON.stringify(settings),
-  })
+  }))
 }
