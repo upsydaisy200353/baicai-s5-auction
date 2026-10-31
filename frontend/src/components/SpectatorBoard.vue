@@ -30,32 +30,49 @@ const props = defineProps<{
 
 const secondsLeft = ref(0)
 let tickTimer: ReturnType<typeof setInterval> | null = null
-let lastFetchTime = Date.now()
+let serverAnchorMs = props.serverTimeMs ?? Date.now()
+let monotonicAnchorMs = performance.now()
+let timerKey = ''
+let lastDisplayedSeconds = Number.POSITIVE_INFINITY
 
 function updateTimer() {
-  if (!props.openBid?.deadlineMs) {
+  const deadlineMs = props.openBid?.deadlineMs
+  if (!deadlineMs) {
     secondsLeft.value = 0
+    timerKey = ''
+    lastDisplayedSeconds = Number.POSITIVE_INFINITY
     return
   }
-  // 用服务端时间校准：serverNow = serverTimeMs + (Date.now() - lastFetchTime)
-  const serverNow = props.serverTimeMs
-    ? props.serverTimeMs + (Date.now() - lastFetchTime)
-    : Date.now()
-  secondsLeft.value = Math.max(0, (props.openBid.deadlineMs - serverNow) / 1000)
+
+  const key = `${props.phase}:${props.openBid?.player?.serial ?? props.currentPlayer?.serial ?? ''}:${deadlineMs}`
+  if (key !== timerKey) {
+    timerKey = key
+    lastDisplayedSeconds = Number.POSITIVE_INFINITY
+  }
+
+  const elapsedMs = Math.max(0, performance.now() - monotonicAnchorMs)
+  const serverNowMs = serverAnchorMs + elapsedMs
+  const remainingSeconds = Math.max(0, (deadlineMs - serverNowMs) / 1000)
+  secondsLeft.value = Math.min(lastDisplayedSeconds, remainingSeconds)
+  lastDisplayedSeconds = secondsLeft.value
 }
 
 watch(
   () => props.serverTimeMs,
   (ms) => {
-    if (ms) {
-      lastFetchTime = Date.now()
-    }
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return
+    const now = performance.now()
+    const predictedServerNow = serverAnchorMs + Math.max(0, now - monotonicAnchorMs)
+    // 校准只允许时间向前，避免轮询抖动让倒计时回弹。
+    serverAnchorMs = Math.max(predictedServerNow, ms)
+    monotonicAnchorMs = now
+    updateTimer()
   },
   { immediate: true },
 )
 
 watch(
-  () => props.openBid?.deadlineMs,
+  () => [props.phase, props.openBid?.deadlineMs, props.openBid?.player?.serial, props.currentPlayer?.serial],
   () => updateTimer(),
   { immediate: true },
 )
