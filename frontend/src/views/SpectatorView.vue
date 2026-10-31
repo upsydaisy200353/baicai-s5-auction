@@ -12,21 +12,27 @@ const { isAdmin } = useAuth()
 let historyChecked = false
 const error = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let refreshInFlight = false
 
 const { onDrawTick } = useAuctionSounds(state)
 
 const overlayPhases = ['intro', 'pool_draw', 'winner_reveal', 'finished']
 
 async function refresh() {
+  if (refreshInFlight) return
+  refreshInFlight = true
   try {
-    state.value = await fetchSpectatorState()
-    if (state.value.phase === 'idle' && !historyChecked) {
+    const nextState = await fetchSpectatorState()
+    state.value = nextState
+    if (nextState.phase === 'idle' && !historyChecked) {
       historyChecked = true
       try { latestArchive.value = await fetchLatestAuctionResult() } catch { /* 保持空闲页可用 */ }
     }
     error.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : '同步失败'
+  } finally {
+    refreshInFlight = false
   }
 }
 
