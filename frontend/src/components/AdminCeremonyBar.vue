@@ -11,6 +11,7 @@ const props = defineProps<{
   auctionStage?: 'main' | 'unsold'
   unsoldPoolCount?: number
   mainPoolCount?: number
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +35,7 @@ watch(
 )
 
 function applySettings() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   emit('updateSettings', {
@@ -44,11 +46,13 @@ function applySettings() {
 }
 
 function onHammer() {
+  if (props.busy) return
   void unlockAudio()
   emit('hammer')
 }
 
 function onReset() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   emit('reset')
@@ -65,15 +69,16 @@ function onReset() {
       <span v-if="unsoldPoolCount != null" class="pool-stat">流拍 {{ unsoldPoolCount }}</span>
     </div>
     <div class="bar-actions">
-      <button class="btn-ghost" @click="showSettings = !showSettings">计时设置</button>
+      <button class="btn-ghost" :disabled="busy" @click="showSettings = !showSettings">计时设置</button>
       <button
         v-if="canHammer"
         class="btn-primary btn-hammer"
+        :disabled="busy"
         @click="onHammer"
       >
         落槌
       </button>
-      <button class="btn-ghost" @click="onReset">重置仪式</button>
+      <button class="btn-ghost" :disabled="busy" @click="onReset">重置仪式</button>
     </div>
   </div>
 
@@ -82,13 +87,13 @@ function onReset() {
     <div class="settings-row">
       <label>
         加价后倒计时（秒）
-        <input v-model.number="bidExtension" type="number" min="5" max="300" />
+        <input v-model.number="bidExtension" type="number" min="5" max="300" :disabled="busy" />
       </label>
       <label>
         无人出价流拍（秒）
-        <input v-model.number="noBidTimeout" type="number" min="10" max="600" />
+        <input v-model.number="noBidTimeout" type="number" min="10" max="600" :disabled="busy" />
       </label>
-      <button class="btn-primary" @click="applySettings">保存</button>
+      <button class="btn-primary" :disabled="busy" @click="applySettings">保存</button>
     </div>
     <p class="settings-hint">有人出价后，{{ bidExtension }}s 内无人继续加价则最高价者得；全程无人出价超过 {{ noBidTimeout }}s 则进入流拍池。</p>
   </div>
