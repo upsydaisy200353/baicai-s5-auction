@@ -124,7 +124,7 @@ export function confirmWinner() {
 
 export function submitOpenBid(
   action: 'bid' | 'pass' | 'buyout',
-  opts?: { amount?: number; captainName?: string },
+  opts: { playerSerial: string; amount?: number; captainName?: string },
 ) {
   return withServerTimeEstimate(() => apiRequest<ServerAuctionState>('/auction/bid', {
     method: 'POST',
