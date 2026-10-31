@@ -30,6 +30,10 @@ const error = ref('')
 const actionMsg = ref('')
 const proxyCaptain = ref<string | null>(null)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let refreshInFlight = false
+let actionInFlight = false
+let stateRequestId = 0
+let appliedStateRequestId = 0
 
 const { onDrawTick, onHammerClick, onActionError } = useAuctionSounds(state, {
   selfCaptainName: captainName,
@@ -89,25 +93,43 @@ watch(
   { deep: true },
 )
 
+function applyState(next: ServerAuctionState, requestId: number) {
+  if (requestId < appliedStateRequestId) return
+  appliedStateRequestId = requestId
+  state.value = next
+}
+
 async function refresh() {
+  if (refreshInFlight || actionInFlight) return
+  refreshInFlight = true
+  const requestId = ++stateRequestId
   try {
-    state.value = await fetchAuctionState()
+    const next = await fetchAuctionState()
+    applyState(next, requestId)
     error.value = ''
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '同步失败'
+    if (requestId >= appliedStateRequestId) {
+      error.value = e instanceof Error ? e.message : '同步失败'
+    }
   } finally {
+    refreshInFlight = false
     loading.value = false
   }
 }
 
 async function runAction(fn: () => Promise<ServerAuctionState>, label?: string) {
+  if (actionInFlight) return
+  actionInFlight = true
+  const requestId = ++stateRequestId
   actionMsg.value = ''
   try {
-    state.value = await fn()
+    applyState(await fn(), requestId)
     if (label) actionMsg.value = label
   } catch (e) {
     actionMsg.value = e instanceof Error ? e.message : '操作失败'
     onActionError()
+  } finally {
+    actionInFlight = false
   }
 }
 
