@@ -17,6 +17,8 @@ MIN_INCREMENT = 20
 DEFAULT_BID_EXTENSION_SECONDS = 30
 DEFAULT_NO_BID_TIMEOUT_SECONDS = 60
 UNSOLD_PRICE_MULTIPLIER = 1.25
+DRAW_SPIN_MS = 2240
+DRAW_REVEAL_MS = 5000
 SOFT_CAP_BASE = 7
 HARD_CAP_BASE = 8
 MIN_RESERVE_FUNDS = 200  # 队长必须保留的最低余额（单位：w）
@@ -68,6 +70,7 @@ class AuctionEngine:
         self.current_pool = None
         self.current_player = None
         self.draw_candidates = []
+        self.draw_started_at_ms = 0
         self.last_result = None
         self.logs = []
         self._log_id = 0
@@ -119,6 +122,7 @@ class AuctionEngine:
                 "currentPool": self.current_pool,
                 "currentPlayer": self.current_player,
                 "drawCandidates": self.draw_candidates,
+                "drawStartedAtMs": self.draw_started_at_ms,
                 "lastResult": self.last_result,
                 "logs": self.logs,
                 "_logId": self._log_id,
@@ -153,6 +157,7 @@ class AuctionEngine:
         self.current_pool = data.get("currentPool")
         self.current_player = data.get("currentPlayer")
         self.draw_candidates = data.get("drawCandidates", [])
+        self.draw_started_at_ms = int(data.get("drawStartedAtMs", 0) or 0)
         self.last_result = data.get("lastResult")
         self.logs = data.get("logs", [])
         self._log_id = data.get("_logId", 0)
@@ -181,7 +186,12 @@ class AuctionEngine:
         self._normalize_players()
 
     def tick(self) -> bool:
-        """后台计时：检查全员放弃与倒计时落槌。返回状态是否变化。"""
+        """后台计时：统一推进抽取动画和竞拍倒计时。返回状态是否变化。"""
+        if self.phase == "pool_draw" and self.draw_started_at_ms:
+            draw_finished_at = self.draw_started_at_ms + DRAW_SPIN_MS + DRAW_REVEAL_MS
+            if int(time.time() * 1000) >= draw_finished_at:
+                self.reveal_draw()
+                return True
         if self.phase != "open_bid" or not self.current_player:
             return False
         before = (self.phase, self.current_leader, self.current_price, self.last_result)
@@ -573,6 +583,7 @@ class AuctionEngine:
             "openBid": self._build_open_bid_context(),
             "logs": list(self.logs),
             "drawCandidates": copy.deepcopy(self.draw_candidates),
+            "drawStartedAtMs": self.draw_started_at_ms if self.phase == "pool_draw" else None,
             "lastResult": copy.deepcopy(self.last_result),
             "availablePools": self.available_pools,
             "auctionSettings": {
@@ -692,6 +703,7 @@ class AuctionEngine:
         pick = self._weighted_pick(drawable)
         self.pending_pick = pick
         self.draw_candidates = copy.deepcopy(drawable)
+        self.draw_started_at_ms = int(time.time() * 1000)
         self.current_player = None
         self.current_pool = pick["position"]
         self.phase = "pool_draw"
@@ -706,6 +718,7 @@ class AuctionEngine:
             return
         self.current_player = self.pending_pick
         self.pending_pick = None
+        self.draw_started_at_ms = 0
         self._reshuffle_aliases()
         self.phase = "open_bid"
         self._reset_open_bid_state()
