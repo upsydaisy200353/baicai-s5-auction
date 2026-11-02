@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { POSITION_COLORS, POSITION_SHORT } from '../constants'
+import { POSITION_COLORS, POSITION_SHORT, POSITION_NAMES } from '../constants'
 import { fetchAuctionHistory, type AuctionHistoryRecord } from '../api/auction'
 import type { Position } from '../types'
 
@@ -13,6 +13,17 @@ const error = ref('')
 const selected = computed(() => records.value.find((record) => record.id === selectedId.value) ?? records.value[0] ?? null)
 const soldCount = computed(() => selected.value?.state.players.filter((player) => player.sold).length ?? 0)
 const unsoldCount = computed(() => selected.value ? selected.value.state.players.length - soldCount.value : 0)
+const flowedPlayers = computed(() =>
+  selected.value?.state.players.filter((player) => !player.sold && (player.excluded || player.inUnsoldPool)) ?? [],
+)
+const flowedGroups = computed(() =>
+  POSITION_ORDER
+    .map((position) => ({
+      position,
+      players: flowedPlayers.value.filter((player) => player.position === position),
+    }))
+    .filter((group) => group.players.length > 0),
+)
 const eventCount = computed(() => selected.value?.state.logs.length ?? 0)
 const playerSearch = ref('')
 const selectedPlayerSerial = ref('')
@@ -189,12 +200,10 @@ function priceFor(name: string) {
           <p v-if="!playerRounds.length" class="process-empty">本场没有找到该选手的竞拍日志。</p>
           <div v-for="(round, roundIndex) in playerRounds" :key="`${selectedPlayer.serial}-${roundIndex}`" class="player-round">
             <h3><span>第 {{ roundIndex + 1 }} 轮</span><small>{{ round.stage }}</small></h3>
-            <p class="flow-hint">按时间从左到右排列，节点较多时自动换行</p>
-            <ol class="player-timeline" aria-label="按时间从左到右排列的竞拍流程">
-              <li v-for="(entry, entryIndex) in round.entries" :key="entry.id" :class="entry.type">
-                <span class="player-timeline-node" aria-hidden="true">{{ entryIndex + 1 }}</span>
-                <time>{{ formatLogTime(entry.time) }}</time><span class="event-text">{{ entry.text }}</span>
-                <span v-if="entryIndex < round.entries.length - 1" class="player-flow-arrow" aria-hidden="true">→</span>
+            <ol class="player-timeline">
+              <li v-for="entry in round.entries" :key="entry.id" :class="entry.type">
+                <span class="player-timeline-node" aria-hidden="true"></span>
+                <time>{{ formatLogTime(entry.time) }}</time><span>{{ entry.text }}</span>
               </li>
             </ol>
           </div>
@@ -255,6 +264,32 @@ function priceFor(name: string) {
           </ol>
         </section>
       </div>
+
+      <section class="unsold-section" aria-label="流拍名单">
+        <header class="section-heading">
+          <div>
+            <p class="section-kicker">UNSOLD PLAYERS</p>
+            <h2>流拍名单</h2>
+          </div>
+          <span class="section-count">{{ flowedPlayers.length }} 人</span>
+        </header>
+        <p v-if="!flowedPlayers.length" class="empty-unsold">本场没有流拍选手。</p>
+        <div v-else class="unsold-position-grid">
+          <article v-for="group in flowedGroups" :key="group.position" class="unsold-position-card">
+            <header>
+              <span class="position-tag" :style="{ '--position-color': POSITION_COLORS[group.position] }">{{ POSITION_SHORT[group.position] }}</span>
+              <strong>{{ POSITION_NAMES[group.position] }}</strong>
+              <small>{{ group.players.length }} 人</small>
+            </header>
+            <ul>
+              <li v-for="player in group.players" :key="player.serial">
+                <span class="unsold-player-name">{{ player.name }}</span>
+                <span class="unsold-player-serial">{{ player.serial }}</span>
+              </li>
+            </ul>
+          </article>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -319,22 +354,33 @@ function priceFor(name: string) {
 .player-round { margin-top: .55rem; padding: .75rem .85rem; border: 1px solid #efe9e0; border-radius: 10px; background: #fdfbf7; }
 .player-round h3 { display: flex; align-items: center; gap: .55rem; margin-bottom: .35rem; font-size: .78rem; }
 .player-round h3 small { color: var(--muted); font-size: .65rem; font-weight: 500; }
-.flow-hint { margin: 0 0 .55rem; color: var(--muted); font-size: .67rem; }
-.player-timeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .7rem .85rem; margin: 0; padding: .25rem .1rem .35rem; list-style: none; }
-.player-timeline li { position: relative; display: grid; grid-template-columns: 1.2rem auto; align-content: start; align-items: center; gap: .5rem; min-width: 0; min-height: 6.5rem; padding: .75rem; border: 1px solid #e9e1d7; border-top: 2px solid #d7cfc4; border-radius: 9px; color: #5b524a; background: #fffefa; font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
-.player-timeline li.bid, .player-timeline li.buyout { border-top-color: #d59a59; }
-.player-timeline li.win { border-top-color: #718f70; background: #fbfdf9; }
-.player-timeline li.warn { border-top-color: #c97b69; background: #fffaf8; }
+.player-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.player-timeline li { display: grid; grid-template-columns: .7rem 3.3rem minmax(0, 1fr); align-items: baseline; gap: .5rem; padding: .42rem .15rem; border-bottom: 1px solid #f1ece5; color: #5b524a; font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.player-timeline li:last-child { border-bottom: 0; }
 .player-timeline time { color: #94887d; font: 600 .65rem/1.5 var(--font-display); font-variant-numeric: tabular-nums; }
-.event-text { grid-column: 1 / -1; color: #5b524a; }
-.player-timeline-node { display: grid; place-items: center; width: 1.15rem; height: 1.15rem; border: 1px solid #cfc5b9; border-radius: 50%; color: #81776e; background: white; font: 700 .57rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
-.player-timeline li.bid .player-timeline-node, .player-timeline li.buyout .player-timeline-node { border-color: #d59a59; color: white; background: #d59a59; }
-.player-timeline li.win .player-timeline-node { border-color: #718f70; color: white; background: #718f70; }
-.player-timeline li.warn .player-timeline-node { border-color: #c97b69; color: white; background: #c97b69; }
-.player-flow-arrow { position: absolute; z-index: 2; top: 50%; right: -.93rem; display: grid; place-items: center; width: 1rem; height: 1rem; transform: translateY(-50%); border-radius: 50%; color: var(--terracotta); background: #fdfbf7; font-size: .85rem; line-height: 1; }
+.player-timeline-node { align-self: center; width: .42rem; height: .42rem; border: 1.5px solid #cfc5b9; border-radius: 50%; background: white; }
+.player-timeline li.bid .player-timeline-node, .player-timeline li.buyout .player-timeline-node { border-color: #d59a59; background: #d59a59; }
+.player-timeline li.win .player-timeline-node { border-color: #718f70; background: #718f70; }
+.player-timeline li.warn .player-timeline-node { border-color: #c97b69; background: #c97b69; }
 .history-coverage-note { margin-top: .7rem; padding: .55rem .75rem; border-radius: 8px; color: #8b6a37; background: #fbf2df; font-size: .7rem; }
 .process-empty { margin-top: .7rem; padding: .7rem .8rem; border-radius: 8px; color: var(--muted); background: #f8f5ef; font-size: .76rem; }
 .process-placeholder { border: 1px dashed var(--line); text-align: center; }
+.unsold-section { margin-top: 1.4rem; padding: 1rem 1.1rem 1.1rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 16px rgba(64, 45, 29, .035); }
+.unsold-section .section-heading { margin-bottom: .75rem; }
+.unsold-position-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .7rem; }
+.unsold-position-card { min-width: 0; padding: .75rem .8rem; border: 1px solid var(--line); border-radius: 10px; background: #fffdfa; }
+.unsold-position-card > header { display: flex; align-items: center; gap: .5rem; padding-bottom: .55rem; border-bottom: 1px solid #f0ebe4; }
+.unsold-position-card > header strong { color: var(--ink); font-size: .78rem; }
+.unsold-position-card > header small { margin-left: auto; color: var(--muted); font-size: .68rem; }
+.unsold-position-card ul { display: grid; gap: .25rem; padding-top: .5rem; list-style: none; }
+.unsold-position-card li { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; min-width: 0; padding: .3rem .1rem; }
+.unsold-player-name { min-width: 0; color: #4d453e; font-size: .76rem; overflow-wrap: anywhere; }
+.unsold-player-serial { flex: 0 0 auto; color: var(--muted); font-size: .64rem; }
+.empty-unsold { padding: .75rem; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: .76rem; text-align: center; }
+.history-page :is(.summary-item strong, .summary-date strong, .event-count, .section-count, .round-count, .search-result-count, .team-index, .funds strong, .player-price, .timeline time, .player-timeline time, .player-timeline-node, .unsold-player-serial) {
+  font-family: var(--font);
+  font-variant-numeric: lining-nums tabular-nums;
+}
 .archive-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr); gap: 1.2rem; align-items: start; }
 .teams-section, .timeline-section { min-width: 0; }
 .section-heading, .timeline-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin: 0 0 .75rem; }
@@ -383,7 +429,7 @@ function priceFor(name: string) {
   .summary-date { grid-column: 1 / -1; padding: .65rem .85rem; border-top: 1px solid var(--line); }
   .teams-grid { grid-template-columns: minmax(0, 1fr); }
   .player-process { padding: .9rem; }
-  .player-timeline { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
+  .player-timeline li { grid-template-columns: .6rem 2.8rem minmax(0, 1fr); gap: .35rem; font-size: .72rem; }
   .timeline { max-height: none; }
 }
 @media (max-width: 420px) {
