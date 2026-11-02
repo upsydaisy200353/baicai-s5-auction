@@ -21,7 +21,7 @@ interface PositionGroup {
 
 function unsoldStartPrice(player: Player): number {
   const original = Number(player.originalStartPrice ?? player.startPrice) || 0
-  const scaled = Math.max(10, original) * 1.25
+  const scaled = Math.max(10, original) * 1.2
   const floor = Math.floor(scaled)
   const fraction = scaled - floor
   const rounded = Math.abs(fraction - 0.5) < 1e-9
