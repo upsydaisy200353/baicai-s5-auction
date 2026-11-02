@@ -17,6 +17,7 @@ import CeremonyOverlay from '../components/CeremonyOverlay.vue'
 import CeremonyTimeline from '../components/CeremonyTimeline.vue'
 import LogPanel from '../components/LogPanel.vue'
 import OpenBidPanel from '../components/OpenBidPanel.vue'
+import PlayerStatusBoard from '../components/PlayerStatusBoard.vue'
 import SpectatorBoard from '../components/SpectatorBoard.vue'
 import { useAuctionSounds } from '../composables/useAuctionSounds'
 import { playSound, unlockAudio } from '../lib/soundEngine'
@@ -384,6 +385,11 @@ async function onBuyout(playerSerial: string) {
             </div>
           </template>
         </SpectatorBoard>
+
+        <PlayerStatusBoard
+          :players="state.players"
+          :current-player-serial="state.currentPlayer?.serial ?? null"
+        />
 
         <details v-if="isAdmin" class="admin-log card">
           <summary>操作日志</summary>
