@@ -229,7 +229,7 @@ function priceFor(name: string) {
                     {{ positionFor(name) ? POSITION_SHORT[positionFor(name)!] : '选手' }}
                   </span>
                   <span class="player-name">{{ name }}</span>
-                  <span v-if="priceFor(name) !== null" class="player-price">{{ priceFor(name) }}w</span>
+                  <span v-if="name !== captain.name && priceFor(name) !== null" class="player-price">{{ priceFor(name) }}w</span>
                 </li>
               </ul>
               <p v-else class="empty-team">本场未签下选手</p>
