@@ -19,6 +19,17 @@ interface PositionGroup {
   total: number
 }
 
+function unsoldStartPrice(player: Player): number {
+  const original = Number(player.originalStartPrice ?? player.startPrice) || 0
+  const scaled = Math.max(10, original) * 1.25
+  const floor = Math.floor(scaled)
+  const fraction = scaled - floor
+  const rounded = Math.abs(fraction - 0.5) < 1e-9
+    ? (floor % 2 === 0 ? floor : floor + 1)
+    : Math.round(scaled)
+  return Math.max(10, rounded)
+}
+
 const groups = computed<PositionGroup[]>(() =>
   POSITIONS.map((key) => {
     const list = props.players.filter((p) => p.position === key)
@@ -99,7 +110,7 @@ const totals = computed(() => {
           <ul class="ps-list">
             <li v-for="p in g.unsold" :key="p.serial" class="ps-item unsold">
               <span class="ps-name">{{ p.name }}</span>
-              <span class="ps-meta">{{ p.excluded ? '不再重拍' : p.startPrice + 'w 起' }}</span>
+              <span class="ps-meta">{{ p.excluded ? '不再重拍' : '重拍 ' + unsoldStartPrice(p) + 'w 起' }}</span>
             </li>
           </ul>
         </div>
