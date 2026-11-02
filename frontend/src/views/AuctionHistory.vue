@@ -4,6 +4,8 @@ import { POSITION_COLORS, POSITION_SHORT } from '../constants'
 import { fetchAuctionHistory, type AuctionHistoryRecord } from '../api/auction'
 import type { Position } from '../types'
 
+const POSITION_ORDER: Position[] = ['Top', 'Jungle', 'Mid', 'Bot', 'Support']
+
 const records = ref<AuctionHistoryRecord[]>([])
 const selectedId = ref('')
 const loading = ref(true)
@@ -84,8 +86,24 @@ function formatLogTime(value: string) {
     .join(':')
 }
 
+function playerFor(name: string) {
+  return selected.value?.state.players.find((player) => player.name === name) ?? null
+}
+
 function positionFor(name: string): Position | null {
-  return selected.value?.state.players.find((player) => player.name === name)?.position ?? null
+  return playerFor(name)?.position ?? null
+}
+
+function orderedTeam(names: string[]) {
+  return [...names].sort((left, right) => {
+    const leftPosition = playerFor(left)?.position
+    const rightPosition = playerFor(right)?.position
+    return POSITION_ORDER.indexOf(leftPosition ?? 'Support') - POSITION_ORDER.indexOf(rightPosition ?? 'Support')
+  })
+}
+
+function priceFor(name: string) {
+  return playerFor(name)?.finalPrice ?? null
 }
 </script>
 
@@ -206,11 +224,12 @@ function positionFor(name: string): Position | null {
                 <div class="funds"><span>剩余资金</span><strong>{{ captain.funds }}<small>w</small></strong></div>
               </header>
               <ul v-if="captain.team.length" class="player-list">
-                <li v-for="name in captain.team" :key="name">
+                <li v-for="name in orderedTeam(captain.team)" :key="name">
                   <span class="position-tag" :style="{ '--position-color': positionFor(name) ? POSITION_COLORS[positionFor(name)!] : '#a59a8e' }">
                     {{ positionFor(name) ? POSITION_SHORT[positionFor(name)!] : '选手' }}
                   </span>
                   <span class="player-name">{{ name }}</span>
+                  <span v-if="priceFor(name) !== null" class="player-price">{{ priceFor(name) }}w</span>
                 </li>
               </ul>
               <p v-else class="empty-team">本场未签下选手</p>
@@ -328,7 +347,8 @@ function positionFor(name: string): Position | null {
 .player-list { display: grid; gap: .25rem; padding-top: .58rem; list-style: none; }
 .player-list li { display: flex; min-width: 0; align-items: center; gap: .55rem; min-height: 1.65rem; }
 .position-tag { display: inline-grid; place-items: center; flex: 0 0 2.05rem; height: 1.25rem; color: var(--position-color); border: 1px solid color-mix(in srgb, var(--position-color) 28%, white); border-radius: 5px; background: color-mix(in srgb, var(--position-color) 9%, white); font: 700 .58rem var(--font-display); }
-.player-name { min-width: 0; color: #4d453e; font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
+.player-name { min-width: 0; flex: 1; color: #4d453e; font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
+.player-price { flex: 0 0 auto; color: var(--terracotta); font: 650 .72rem var(--font-display); font-variant-numeric: tabular-nums; }
 .empty-team { padding-top: .6rem; color: var(--muted); font-size: .78rem; }
 .timeline-section { position: sticky; top: 1rem; padding: .95rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 16px rgba(64, 45, 29, .035); }
 .timeline-head { align-items: center; margin: 0; padding: 0 .15rem .75rem; border-bottom: 1px solid var(--line); }
