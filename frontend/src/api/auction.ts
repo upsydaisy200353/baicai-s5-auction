@@ -66,6 +66,7 @@ export interface AuctionHistoryRecord {
     poolOrder?: Position[]
     logs: LogEntry[]
     auctionStage?: 'main' | 'unsold'
+    historyComplete?: boolean
   }
 }
 
