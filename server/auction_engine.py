@@ -73,6 +73,7 @@ class AuctionEngine:
         self.draw_started_at_ms = 0
         self.last_result = None
         self.logs = []
+        self.history_logs = []
         self._log_id = 0
         self.remaining_pools = []
         self.pending_pick = None
@@ -125,6 +126,7 @@ class AuctionEngine:
                 "drawStartedAtMs": self.draw_started_at_ms,
                 "lastResult": self.last_result,
                 "logs": self.logs,
+                "historyLogs": self.history_logs,
                 "_logId": self._log_id,
                 "remainingPools": self.remaining_pools,
                 "pendingPick": self.pending_pick,
@@ -162,6 +164,7 @@ class AuctionEngine:
             self.draw_started_at_ms = int(time.time() * 1000)
         self.last_result = data.get("lastResult")
         self.logs = data.get("logs", [])
+        self.history_logs = data.get("historyLogs", copy.deepcopy(self.logs))
         self._log_id = data.get("_logId", 0)
         self.remaining_pools = data.get("remainingPools", [])
         self.pending_pick = data.get("pendingPick")
@@ -234,6 +237,7 @@ class AuctionEngine:
         if real_text is not None:
             entry["realText"] = real_text
         self.logs.append(entry)
+        self.history_logs.append(copy.deepcopy(entry))
 
     def alias_for(self, captain_name: str | None) -> str | None:
         if not captain_name:
