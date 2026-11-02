@@ -189,10 +189,12 @@ function priceFor(name: string) {
           <p v-if="!playerRounds.length" class="process-empty">本场没有找到该选手的竞拍日志。</p>
           <div v-for="(round, roundIndex) in playerRounds" :key="`${selectedPlayer.serial}-${roundIndex}`" class="player-round">
             <h3><span>第 {{ roundIndex + 1 }} 轮</span><small>{{ round.stage }}</small></h3>
-            <ol class="player-timeline">
-              <li v-for="entry in round.entries" :key="entry.id" :class="entry.type">
-                <span class="player-timeline-node" aria-hidden="true"></span>
-                <time>{{ formatLogTime(entry.time) }}</time><span>{{ entry.text }}</span>
+            <p class="flow-hint">按时间从左到右排列，节点较多时自动换行</p>
+            <ol class="player-timeline" aria-label="按时间从左到右排列的竞拍流程">
+              <li v-for="(entry, entryIndex) in round.entries" :key="entry.id" :class="entry.type">
+                <span class="player-timeline-node" aria-hidden="true">{{ entryIndex + 1 }}</span>
+                <time>{{ formatLogTime(entry.time) }}</time><span class="event-text">{{ entry.text }}</span>
+                <span v-if="entryIndex < round.entries.length - 1" class="player-flow-arrow" aria-hidden="true">→</span>
               </li>
             </ol>
           </div>
@@ -317,14 +319,19 @@ function priceFor(name: string) {
 .player-round { margin-top: .55rem; padding: .75rem .85rem; border: 1px solid #efe9e0; border-radius: 10px; background: #fdfbf7; }
 .player-round h3 { display: flex; align-items: center; gap: .55rem; margin-bottom: .35rem; font-size: .78rem; }
 .player-round h3 small { color: var(--muted); font-size: .65rem; font-weight: 500; }
-.player-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-.player-timeline li { display: grid; grid-template-columns: .7rem 3.3rem minmax(0, 1fr); align-items: baseline; gap: .5rem; padding: .42rem .15rem; border-bottom: 1px solid #f1ece5; color: #5b524a; font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
-.player-timeline li:last-child { border-bottom: 0; }
+.flow-hint { margin: 0 0 .55rem; color: var(--muted); font-size: .67rem; }
+.player-timeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .7rem .85rem; margin: 0; padding: .25rem .1rem .35rem; list-style: none; }
+.player-timeline li { position: relative; display: grid; grid-template-columns: 1.2rem auto; align-content: start; align-items: center; gap: .5rem; min-width: 0; min-height: 6.5rem; padding: .75rem; border: 1px solid #e9e1d7; border-top: 2px solid #d7cfc4; border-radius: 9px; color: #5b524a; background: #fffefa; font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.player-timeline li.bid, .player-timeline li.buyout { border-top-color: #d59a59; }
+.player-timeline li.win { border-top-color: #718f70; background: #fbfdf9; }
+.player-timeline li.warn { border-top-color: #c97b69; background: #fffaf8; }
 .player-timeline time { color: #94887d; font: 600 .65rem/1.5 var(--font-display); font-variant-numeric: tabular-nums; }
-.player-timeline-node { align-self: center; width: .42rem; height: .42rem; border: 1.5px solid #cfc5b9; border-radius: 50%; background: white; }
-.player-timeline li.bid .player-timeline-node, .player-timeline li.buyout .player-timeline-node { border-color: #d59a59; background: #d59a59; }
-.player-timeline li.win .player-timeline-node { border-color: #718f70; background: #718f70; }
-.player-timeline li.warn .player-timeline-node { border-color: #c97b69; background: #c97b69; }
+.event-text { grid-column: 1 / -1; color: #5b524a; }
+.player-timeline-node { display: grid; place-items: center; width: 1.15rem; height: 1.15rem; border: 1px solid #cfc5b9; border-radius: 50%; color: #81776e; background: white; font: 700 .57rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.player-timeline li.bid .player-timeline-node, .player-timeline li.buyout .player-timeline-node { border-color: #d59a59; color: white; background: #d59a59; }
+.player-timeline li.win .player-timeline-node { border-color: #718f70; color: white; background: #718f70; }
+.player-timeline li.warn .player-timeline-node { border-color: #c97b69; color: white; background: #c97b69; }
+.player-flow-arrow { position: absolute; z-index: 2; top: 50%; right: -.93rem; display: grid; place-items: center; width: 1rem; height: 1rem; transform: translateY(-50%); border-radius: 50%; color: var(--terracotta); background: #fdfbf7; font-size: .85rem; line-height: 1; }
 .history-coverage-note { margin-top: .7rem; padding: .55rem .75rem; border-radius: 8px; color: #8b6a37; background: #fbf2df; font-size: .7rem; }
 .process-empty { margin-top: .7rem; padding: .7rem .8rem; border-radius: 8px; color: var(--muted); background: #f8f5ef; font-size: .76rem; }
 .process-placeholder { border: 1px dashed var(--line); text-align: center; }
@@ -376,7 +383,7 @@ function priceFor(name: string) {
   .summary-date { grid-column: 1 / -1; padding: .65rem .85rem; border-top: 1px solid var(--line); }
   .teams-grid { grid-template-columns: minmax(0, 1fr); }
   .player-process { padding: .9rem; }
-  .player-timeline li { grid-template-columns: .6rem 2.8rem minmax(0, 1fr); gap: .35rem; font-size: .72rem; }
+  .player-timeline { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); }
   .timeline { max-height: none; }
 }
 @media (max-width: 420px) {
