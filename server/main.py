@@ -406,7 +406,9 @@ def persist_auction_state() -> None:
     if auction.phase == "finished" and auction.auction_id:
         archived = json.loads(auction.serialize())
         aliases = archived.get("captainAliases") or {}
-        logs = archived.get("logs", [])
+        logs = archived.get("historyLogs", archived.get("logs", []))
+        archived["historyComplete"] = "historyLogs" in archived
+        archived["logs"] = logs
         for entry in logs:
             entry["text"] = entry.pop("realText", entry.get("text", ""))
         # Legacy alias logs rotated once per player. Reconstruct the single winning proxy
@@ -435,6 +437,7 @@ def persist_auction_state() -> None:
                     text = text.replace(alias, real_name)
             entry["text"] = text
         archived["captainAliases"] = {}
+        archived.pop("historyLogs", None)
         save_auction_history(
             auction.auction_id,
             json.dumps(archived, ensure_ascii=False),
