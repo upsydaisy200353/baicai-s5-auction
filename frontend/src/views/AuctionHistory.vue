@@ -12,6 +12,49 @@ const selected = computed(() => records.value.find((record) => record.id === sel
 const soldCount = computed(() => selected.value?.state.players.filter((player) => player.sold).length ?? 0)
 const unsoldCount = computed(() => selected.value ? selected.value.state.players.length - soldCount.value : 0)
 const eventCount = computed(() => selected.value?.state.logs.length ?? 0)
+const playerSearch = ref('')
+const selectedPlayerSerial = ref('')
+const searchablePlayers = computed(() => {
+  const players = selected.value?.state.players ?? []
+  const query = playerSearch.value.trim().toLocaleLowerCase()
+  return players
+    .filter((player) => !query || `${player.name} ${player.serial}`.toLocaleLowerCase().includes(query))
+    .slice(0, 8)
+})
+const selectedPlayer = computed(() =>
+  selected.value?.state.players.find((player) => player.serial === selectedPlayerSerial.value) ?? null,
+)
+const playerRounds = computed(() => {
+  const player = selectedPlayer.value
+  const logs = selected.value?.state.logs ?? []
+  if (!player) return []
+
+  const rounds: { stage: string; entries: typeof logs }[] = []
+  let active: { stage: string; entries: typeof logs } | null = null
+  const marker = `公开竞拍 — ${player.serial} ${player.name} ·`
+
+  for (const entry of logs) {
+    if (entry.text.startsWith('公开竞拍 — ')) {
+      if (active?.entries.length) rounds.push(active)
+      active = entry.text.startsWith(marker)
+        ? { stage: rounds.length ? '流拍池重拍' : '正式竞拍', entries: [entry] }
+        : null
+      continue
+    }
+    if (!active) continue
+    active.entries.push(entry)
+    if (
+      entry.type === 'win' ||
+      entry.text.startsWith(`流拍：${player.name} —`) ||
+      entry.text.startsWith(`二次拍卖流拍：${player.name} —`)
+    ) {
+      rounds.push(active)
+      active = null
+    }
+  }
+  if (active?.entries.length) rounds.push(active)
+  return rounds
+})
 
 onMounted(async () => {
   try {
@@ -80,6 +123,52 @@ function positionFor(name: string): Position | null {
           <span>归档时间</span>
           <strong>{{ formatTime(selected.completedAt) }}</strong>
         </div>
+      </section>
+
+      <section class="player-process" aria-label="选手竞拍流程查询">
+        <div class="process-heading">
+          <div>
+            <p class="section-kicker">PLAYER BID HISTORY</p>
+            <h2>选手竞拍流程</h2>
+            <p>搜索选手，查看每轮起拍、队长出价与最终结果。</p>
+          </div>
+          <span v-if="selectedPlayer" class="process-player-position">{{ selectedPlayer.position }}</span>
+        </div>
+        <label class="player-search">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input v-model="playerSearch" @input="selectedPlayerSerial = ''" type="search" placeholder="输入选手姓名或编号搜索" autocomplete="off">
+          <span v-if="playerSearch" class="search-result-count">{{ searchablePlayers.length }} 个结果</span>
+        </label>
+        <div v-if="playerSearch && searchablePlayers.length" class="player-match-list">
+          <button
+            v-for="player in searchablePlayers"
+            :key="player.serial"
+            type="button"
+            :class="{ active: selectedPlayerSerial === player.serial }"
+            @click="selectedPlayerSerial = player.serial; playerSearch = player.name"
+          >
+            <span>{{ player.name }}</span><small>{{ player.serial }} · {{ player.position }}</small>
+          </button>
+        </div>
+        <p v-if="selected.state.historyComplete !== true" class="history-coverage-note">这份归档没有完整日志标记，较早的竞拍节点可能未被保存。</p>
+        <div v-if="selectedPlayer" class="player-process-result">
+          <div class="selected-player-title">
+            <div><span>选手</span><strong>{{ selectedPlayer.name }}</strong><small>{{ selectedPlayer.serial }} · {{ selectedPlayer.position }}</small></div>
+            <span class="round-count">{{ playerRounds.length }} 轮记录</span>
+          </div>
+          <p v-if="!playerRounds.length" class="process-empty">本场没有找到该选手的竞拍日志。</p>
+          <div v-for="(round, roundIndex) in playerRounds" :key="`${selectedPlayer.serial}-${roundIndex}`" class="player-round">
+            <h3><span>第 {{ roundIndex + 1 }} 轮</span><small>{{ round.stage }}</small></h3>
+            <ol class="player-timeline">
+              <li v-for="entry in round.entries" :key="entry.id" :class="entry.type">
+                <span class="player-timeline-node" aria-hidden="true"></span>
+                <time>{{ entry.time }}</time><span>{{ entry.text }}</span>
+              </li>
+            </ol>
+          </div>
+        </div>
+        <p v-else-if="playerSearch && !searchablePlayers.length" class="process-empty">没有匹配到选手，请检查姓名或编号。</p>
+        <p v-else class="process-empty process-placeholder">输入姓名或编号后，从候选结果中选择一名选手。</p>
       </section>
 
       <div class="archive-layout">
@@ -173,6 +262,41 @@ function positionFor(name: string): Position | null {
 .summary-date span { color: var(--muted); font-size: .7rem; }
 .summary-date strong { color: var(--ink); font-size: .82rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 
+.player-process { margin: 0 0 1.4rem; padding: 1.15rem 1.25rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 16px rgba(64, 45, 29, .035); }
+.process-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.process-heading h2 { margin-top: .18rem; font: 600 1.35rem/1.25 Georgia, 'Songti SC', 'Noto Serif SC', serif; }
+.process-heading p:last-child { margin-top: .35rem; color: var(--muted); font-size: .78rem; }
+.process-player { padding: .4rem .65rem; border-radius: 999px; background: var(--terracotta-soft); color: var(--terracotta); font-size: .75rem; }
+.player-search { display: flex; align-items: center; gap: .6rem; min-height: 2.8rem; margin-top: .85rem; padding: 0 .8rem; border: 1px solid var(--line); border-radius: 9px; background: #fffdfa; }
+.player-search:focus-within { border-color: #c77b60; box-shadow: 0 0 0 3px rgba(184, 92, 63, .09); }
+.search-icon { color: var(--terracotta); font-size: 1.25rem; line-height: 1; }
+.player-search input { flex: 1; min-width: 0; height: 2.7rem; border: 0; outline: 0; color: var(--ink); background: transparent; font: 400 .84rem var(--font); }
+.player-search input::placeholder { color: #a69b90; }
+.search-result-count { color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.player-match-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .65rem; }
+.player-match-list button { display: flex; align-items: center; gap: .5rem; padding: .45rem .65rem; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fffdfa; cursor: pointer; font: inherit; }
+.player-match-list button:hover, .player-match-list button.active { border-color: #c77b60; background: var(--terracotta-soft); }
+.player-match-list small { color: var(--muted); font-size: .65rem; }
+.player-process-result { margin-top: .85rem; border-top: 1px solid var(--line); }
+.selected-player-title { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .8rem 0 .35rem; }
+.selected-player-title div { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+.selected-player-title div > span, .selected-player-title small { color: var(--muted); font-size: .7rem; }
+.selected-player-title strong { font-size: .95rem; }
+.round-count { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.player-round { margin-top: .55rem; padding: .75rem .85rem; border: 1px solid #efe9e0; border-radius: 10px; background: #fdfbf7; }
+.player-round h3 { display: flex; align-items: center; gap: .55rem; margin-bottom: .35rem; font-size: .78rem; }
+.player-round h3 small { color: var(--muted); font-size: .65rem; font-weight: 500; }
+.player-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.player-timeline li { display: grid; grid-template-columns: .7rem 3.3rem minmax(0, 1fr); align-items: baseline; gap: .5rem; padding: .42rem .15rem; border-bottom: 1px solid #f1ece5; color: #5b524a; font-size: .76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.player-timeline li:last-child { border-bottom: 0; }
+.player-timeline time { color: #94887d; font: 600 .65rem/1.5 var(--font-display); font-variant-numeric: tabular-nums; }
+.player-timeline-node { align-self: center; width: .42rem; height: .42rem; border: 1.5px solid #cfc5b9; border-radius: 50%; background: white; }
+.player-timeline li.bid .player-timeline-node, .player-timeline li.buyout .player-timeline-node { border-color: #d59a59; background: #d59a59; }
+.player-timeline li.win .player-timeline-node { border-color: #718f70; background: #718f70; }
+.player-timeline li.warn .player-timeline-node { border-color: #c97b69; background: #c97b69; }
+.history-coverage-note { margin-top: .7rem; padding: .55rem .75rem; border-radius: 8px; color: #8b6a37; background: #fbf2df; font-size: .7rem; }
+.process-empty { margin-top: .7rem; padding: .7rem .8rem; border-radius: 8px; color: var(--muted); background: #f8f5ef; font-size: .76rem; }
+.process-placeholder { border: 1px dashed var(--line); text-align: center; }
 .archive-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr); gap: 1.2rem; align-items: start; }
 .teams-section, .timeline-section { min-width: 0; }
 .section-heading, .timeline-head { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin: 0 0 .75rem; }
@@ -219,6 +343,8 @@ function positionFor(name: string): Position | null {
   .summary-item { padding: .7rem .45rem; }
   .summary-date { grid-column: 1 / -1; padding: .65rem .85rem; border-top: 1px solid var(--line); }
   .teams-grid { grid-template-columns: minmax(0, 1fr); }
+  .player-process { padding: .9rem; }
+  .player-timeline li { grid-template-columns: .6rem 2.8rem minmax(0, 1fr); gap: .35rem; font-size: .72rem; }
   .timeline { max-height: none; }
 }
 @media (max-width: 420px) {
