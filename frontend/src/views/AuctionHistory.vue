@@ -69,7 +69,19 @@ onMounted(async () => {
 
 function formatTime(value: string) {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
+}
+
+function formatLogTime(value: string) {
+  const match = value.match(/^(\\d{1,2}):(\\d{2}):(\\d{2})$/)
+  if (!match) {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
+  }
+  const total = (Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + 8 * 3600) % 86400
+  return [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60]
+    .map((part) => String(part).padStart(2, '0'))
+    .join(':')
 }
 
 function positionFor(name: string): Position | null {
@@ -162,7 +174,7 @@ function positionFor(name: string): Position | null {
             <ol class="player-timeline">
               <li v-for="entry in round.entries" :key="entry.id" :class="entry.type">
                 <span class="player-timeline-node" aria-hidden="true"></span>
-                <time>{{ entry.time }}</time><span>{{ entry.text }}</span>
+                <time>{{ formatLogTime(entry.time) }}</time><span>{{ entry.text }}</span>
               </li>
             </ol>
           </div>
@@ -216,7 +228,7 @@ function positionFor(name: string): Position | null {
           </header>
           <ol class="timeline">
             <li v-for="entry in selected.state.logs" :key="entry.id" :class="entry.type" class="timeline-entry">
-              <time>{{ entry.time }}</time>
+              <time>{{ formatLogTime(entry.time) }}</time>
               <span class="event-text">{{ entry.text }}</span>
             </li>
           </ol>
