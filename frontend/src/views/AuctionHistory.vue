@@ -75,7 +75,7 @@ function formatTime(value: string) {
 }
 
 function formatLogTime(value: string) {
-  const match = value.match(/^(\\d{1,2}):(\\d{2}):(\\d{2})$/)
+  const match = value.match(/^(\d{1,2}):(\d{2}):(\d{2})$/)
   if (!match) {
     const date = new Date(value)
     return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' })
