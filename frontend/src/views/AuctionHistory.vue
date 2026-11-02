@@ -436,7 +436,8 @@ function priceFor(name: string) {
   .summary-date { grid-column: 1 / -1; padding: .65rem .85rem; border-top: 1px solid var(--line); }
   .teams-grid { grid-template-columns: minmax(0, 1fr); }
   .player-process { padding: .9rem; }
-  .player-timeline li { grid-template-columns: .6rem 2.8rem minmax(0, 1fr); gap: .35rem; font-size: .72rem; }
+  .player-timeline { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .55rem; }
+  .player-timeline li { font-size: .72rem; }
   .timeline { max-height: none; }
 }
 @media (max-width: 420px) {
