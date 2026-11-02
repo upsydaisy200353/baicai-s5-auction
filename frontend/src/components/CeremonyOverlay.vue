@@ -206,7 +206,7 @@ onUnmounted(() => {
         <li>所有队长<strong>同时</strong>公开叫价，价高者得；队长彼此匿名</li>
         <li>每次加价后重置 <strong>{{ props.auctionSettings?.bidExtensionSeconds ?? 30 }} 秒</strong>倒计时；无人继续加价则落槌</li>
         <li>每次加价至少 <strong>{{ MIN_INCREMENT }}w</strong>；支持一口价秒拍（每位队长整场仅一次）</li>
-        <li>若<strong>{{ props.auctionSettings?.noBidTimeoutSeconds ?? 60 }} 秒</strong>内尚无人出价则进入流拍池，主池结束后以初始价 ×1.25 重拍</li>
+        <li>若<strong>{{ props.auctionSettings?.noBidTimeoutSeconds ?? 60 }} 秒</strong>内尚无人出价则进入流拍池，主池结束后以初始价 ×1.2 重拍</li>
         <li>每队每个位置仅可签下一名选手（含队长本人位置）</li>
       </ul>
       <div class="captain-preview">
