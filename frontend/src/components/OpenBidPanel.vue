@@ -106,16 +106,13 @@ function submit(amount: number) {
 
 function onSubmit() {
   if (props.busy) return
-  const rawValue = String(bidInput.value).trim()
   const amount = parseAmount()
-  console.log('onSubmit called:', { rawValue, amount, minNextBid: props.openBid.minNextBid, maxFunds: maxFunds.value })
   if (amount == null) {
     localError.value = '请输入有效出价'
     playSound('uiError')
     return
   }
   const err = validate(amount)
-  console.log('validation result:', { err })
   if (err) {
     localError.value = err
     playSound('uiError')
