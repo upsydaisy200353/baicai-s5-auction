@@ -16,7 +16,10 @@ export interface Player {
   avatar?: string | null
   sold: boolean
   inUnsoldPool?: boolean
+  unsoldReason?: 'passed' | 'quota' | null
   excluded?: boolean
+  excludeReason?: 'quota' | 'unsold' | 'no_bidder' | null
+  viaBuyout?: boolean
   finalPrice: number | null
   winner: string | null
 }

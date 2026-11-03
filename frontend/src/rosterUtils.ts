@@ -118,6 +118,7 @@ export interface RosterSlot {
   name: string | null
   isCaptain: boolean
   price: number | null
+  viaBuyout?: boolean
 }
 
 /** 按 TOP→SUP 顺序整理一队五人阵容（含队长本位置） */
@@ -138,6 +139,7 @@ export function buildCaptainRosterSlots(cap: Captain, players: Player[]): Roster
       name,
       isCaptain: false,
       price: p.finalPrice,
+      viaBuyout: p.viaBuyout,
     })
   }
   return POSITIONS.map(
