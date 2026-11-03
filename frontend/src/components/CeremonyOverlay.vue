@@ -19,6 +19,7 @@ const props = defineProps<{
   lastResult: LastResult | null
   isAdmin?: boolean
   auctionSettings?: AuctionSettings
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +41,7 @@ let finaleRevealTimer: ReturnType<typeof setTimeout> | null = null
 let serverAnchorMs = props.serverTimeMs ?? Date.now()
 let monotonicAnchorMs = performance.now()
 let lastDrawTick = -1
+let revealRequested = false
 const DRAW_SPIN_MS = 2240
 const DRAW_REVEAL_MS = 5000
 
@@ -135,8 +137,6 @@ function updateCarousel() {
   }
 }
 
-let revealRequested = false
-
 function stopCarousel() {
   if (spinTimer) clearInterval(spinTimer)
   spinTimer = null
@@ -144,18 +144,21 @@ function stopCarousel() {
 }
 
 function onBegin() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   emit('begin')
 }
 
 function onConfirmWinner() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   emit('confirmWinner')
 }
 
 function onDismissFinale() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   if (props.isAdmin) {
@@ -212,7 +215,7 @@ onUnmounted(() => {
           <small>{{ c.funds }}w</small>
         </span>
       </div>
-      <button class="btn-primary ceremony-btn" @click="onBegin">进入仪式</button>
+      <button class="btn-primary ceremony-btn" :disabled="busy" @click="onBegin">进入仪式</button>
     </div>
   </div>
 
@@ -269,7 +272,7 @@ onUnmounted(() => {
       <h2 v-else class="overlay-title">{{ lastResult.player.name }} 进入流拍池</h2>
       <p v-if="lastResult.winner" class="winner-price-line">{{ lastResult.price }}w</p>
       <p v-else class="overlay-desc">本轮无人拍下</p>
-      <button v-if="isAdmin" class="btn-primary ceremony-btn" @click="onConfirmWinner">
+      <button v-if="isAdmin" class="btn-primary ceremony-btn" :disabled="busy" @click="onConfirmWinner">
         继续
       </button>
     </div>
@@ -282,6 +285,7 @@ onUnmounted(() => {
       <button
         type="button"
         class="finale-close"
+        :disabled="busy"
         :title="isAdmin ? '结束仪式并返回大厅' : '关闭'"
         :aria-label="isAdmin ? '结束仪式并返回大厅' : '关闭'"
         @click="onDismissFinale"
@@ -354,6 +358,7 @@ onUnmounted(() => {
       <button
         v-if="isAdmin"
         class="btn-primary ceremony-btn finale-btn finale-reset-btn"
+        :disabled="busy"
         @click="onDismissFinale"
       >
         重置仪式，开始下一轮
@@ -361,6 +366,7 @@ onUnmounted(() => {
       <button
         v-else
         class="btn-ghost ceremony-btn finale-btn"
+        :disabled="busy"
         @click="onDismissFinale"
       >
         关闭

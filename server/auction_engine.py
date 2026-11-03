@@ -549,7 +549,7 @@ class AuctionEngine:
                     "alias": self.captain_aliases.get(cap["name"]),
                     "funds": cap["funds"],
                     "latestBid": self.captain_bids.get(cap["name"]),
-                    "isLeader": cap["name"] == self.current_leader,
+                    "isLeader": is_leader,
                     "canBid": can_bid,
                     "canBuyout": can_buyout,
                     "buyoutUsed": buyout_used,
@@ -809,7 +809,6 @@ class AuctionEngine:
     ) -> str | None:
         if self.phase != "open_bid" or not self.current_player:
             return "当前不在公开叫价阶段"
-
         if expected_player_serial is not None and str(self.current_player.get("serial")) != expected_player_serial:
             return "选手已切换，本次操作未提交，请刷新后重试"
 
@@ -822,6 +821,8 @@ class AuctionEngine:
 
         position = self.current_player["position"]
         label = self._label(captain_name)
+        if captain_name == self.current_leader:
+            return "当前由你领先，等待其他队长加价"
         if action == "pass":
             # 放弃只表达意图，不校验余额：钱不够继续跟价的队长同样应该能点放弃
             if captain_name in self.passed_captains:

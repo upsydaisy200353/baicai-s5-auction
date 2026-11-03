@@ -14,12 +14,13 @@ const props = defineProps<{
   proxyCaptainName?: string | null
   selfCaptainName?: string | null
   isAdmin?: boolean
+  isLeading?: boolean
 }>()
 
 const emit = defineEmits<{
-  bid: [amount: number]
-  pass: []
-  buyout: []
+  bid: [amount: number, playerSerial: string]
+  pass: [playerSerial: string]
+  buyout: [playerSerial: string]
 }>()
 
 const bidInput = ref('')
@@ -90,6 +91,7 @@ function validate(amount: number): string | null {
 }
 
 function submit(amount: number) {
+  if (props.busy) return
   localError.value = ''
   const err = validate(amount)
   if (err) {
@@ -99,10 +101,11 @@ function submit(amount: number) {
   }
   void unlockAudio()
   playSound('uiClick')
-  emit('bid', amount)
+  emit('bid', amount, props.openBid.player.serial)
 }
 
 function onSubmit() {
+  if (props.busy) return
   const rawValue = String(bidInput.value).trim()
   const amount = parseAmount()
   console.log('onSubmit called:', { rawValue, amount, minNextBid: props.openBid.minNextBid, maxFunds: maxFunds.value })
@@ -122,6 +125,7 @@ function onSubmit() {
 }
 
 function onQuickBid(amount: number) {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
   bidInput.value = String(amount)
@@ -130,15 +134,17 @@ function onQuickBid(amount: number) {
 }
 
 function onBuyout() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
-  emit('buyout')
+  emit('buyout', props.openBid.player.serial)
 }
 
 function onPass() {
+  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
-  emit('pass')
+  emit('pass', props.openBid.player.serial)
 }
 </script>
 
@@ -151,6 +157,8 @@ function onPass() {
         <template v-else>公开叫价</template>
       </h3>
       <span v-if="hasPassed" class="passed-tag">已放弃本轮</span>
+      <span v-else-if="busy" class="wait-tag">提交中…</span>
+      <span v-else-if="isLeading" class="wait-tag">当前领先，等待其他队长加价</span>
       <span v-else-if="!canSubmit" class="wait-tag">暂不可出价</span>
     </div>
 
@@ -182,9 +190,9 @@ function onPass() {
           type="number"
           class="bid-input"
           :min="openBid.minNextBid"
+          :disabled="busy"
           @focus="isEditing = true"
           @blur="isEditing = false"
-          :disabled="busy"
           @keyup.enter="onSubmit"
         />
         <span class="unit">w</span>

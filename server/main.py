@@ -8,6 +8,8 @@ import os
 from threading import RLock
 from functools import wraps
 from contextlib import asynccontextmanager
+from functools import wraps
+from threading import RLock
 from pathlib import Path
 from typing import Literal
 
@@ -168,9 +170,9 @@ class PoolSelectPayload(BaseModel):
 
 class OpenBidPayload(BaseModel):
     action: Literal["bid", "pass", "buyout"]
-    playerSerial: str
     amount: int | None = Field(default=None, ge=1)
     captainName: str | None = None
+    playerSerial: str = Field(min_length=1, max_length=64)
 
 
 class AuctionSettingsPayload(BaseModel):
