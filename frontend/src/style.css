@@ -274,7 +274,7 @@ button:disabled {
  --gold:#a66a2c;--gold-bright:#bd7c3c;--gold-dim:#f6eddf;--green:#52785c;--green-dim:#e7efe6;
  --red:#b64f45;--red-dim:#f8e9e6;--purple:#7d638e;--radius:17px;--radius-sm:11px;
  --shadow-card:0 8px 26px rgba(61,47,33,.055);--shadow-glow:0 0 22px rgba(184,92,63,.08);
- --font:'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;--font-display:'Georgia','Songti SC','Noto Serif SC',serif
+ --font:'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;--font-display:'Songti SC','Noto Serif SC','Times New Roman','Georgia',serif
 }
 html,body,#app{min-height:100%}body{background:#f5f2ec;color:var(--text);line-height:1.6}
 #app .bg-scene{background:radial-gradient(ellipse at 14% -12%,rgba(221,198,171,.25),transparent 38%),#f5f2ec}
@@ -478,7 +478,7 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(184,92,63,.12);bo
  --gold:#a66a2c;--gold-bright:#bd7c3c;--gold-dim:#f6eddf;--green:#52785c;--green-dim:#e7efe6;
  --red:#b64f45;--red-dim:#f8e9e6;--purple:#7d638e;--radius:17px;--radius-sm:11px;
  --shadow-card:0 8px 26px rgba(61,47,33,.055);--shadow-glow:0 0 22px rgba(184,92,63,.08);
- --font:'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;--font-display:'Georgia','Songti SC','Noto Serif SC',serif
+ --font:'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;--font-display:'Songti SC','Noto Serif SC','Times New Roman','Georgia',serif
 }
 html,body,#app{min-height:100%}body{background:#f5f2ec;color:var(--text);line-height:1.6}
 #app .bg-scene{background:radial-gradient(ellipse at 14% -12%,rgba(221,198,171,.25),transparent 38%),#f5f2ec}
@@ -690,3 +690,12 @@ input:focus,select:focus,textarea:focus{outline:3px solid rgba(184,92,63,.12);bo
 .shell > .nav,.shell--history > .nav{position:relative;z-index:100}
 .shell > .main,.shell--history > .main{position:relative;z-index:1}
 .shell .nav-dropdown,.shell--history .nav-dropdown{z-index:110}
+
+/* ===== 数字与西文一致性修复 =====
+   1) 数字统一为等高(lnum)、等宽(tnum)，避免 Georgia 旧式数字高低不齐
+   2) 西文优先 Times New Roman，与中文宋体同属衬线风格
+*/
+html body {
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'lnum' 1, 'tnum' 1;
+}

@@ -21,8 +21,6 @@ DRAW_SPIN_MS = 2240
 DRAW_REVEAL_MS = 5000
 SOFT_CAP_BASE = 7
 HARD_CAP_BASE = 8
-MIN_RESERVE_FUNDS = 200  # 队长必须保留的最低余额（单位：w）
-MIN_TEAM_SIZE_FOR_RESERVE = 3  # 已有3名队员时启用保留限制
 
 CAPTAIN_ALIAS_POOL = [
     "绯红印记树怪",
@@ -90,6 +88,7 @@ class AuctionEngine:
         self.used_buyout = set()
         self.captain_aliases: dict[str, str] = {}
         self.auction_stage = "main"  # main | unsold
+        self._captain_row_order: list[str] = []
 
     def reset_ceremony(self) -> None:
         """回到 idle，保留已加载名单与计时设置。"""
@@ -143,6 +142,7 @@ class AuctionEngine:
                 "usedBuyout": list(self.used_buyout),
                 "captainAliases": self.captain_aliases,
                 "auctionStage": self.auction_stage,
+                "captainRowOrder": list(self._captain_row_order),
             },
             ensure_ascii=False,
         )
@@ -185,6 +185,7 @@ class AuctionEngine:
         self.used_buyout = set(data.get("usedBuyout", []))
         self.captain_aliases = dict(data.get("captainAliases", {}))
         self.auction_stage = data.get("auctionStage", "main")
+        self._captain_row_order = list(data.get("captainRowOrder", []) or [])
         # 兼容旧存档：pool_select → 直接进入抽签
         if self.phase == "pool_select":
             self.phase = "intro"
@@ -224,6 +225,13 @@ class AuctionEngine:
             p["sold"] = bool(p.get("sold", False))
             p["inUnsoldPool"] = bool(p.get("inUnsoldPool", False))
             p["excluded"] = bool(p.get("excluded", False))
+            p["viaBuyout"] = bool(p.get("viaBuyout", False))
+            # unsoldReason: passed=正常流拍 / quota=位置名额已满被推进流拍池
+            if p.get("unsoldReason") not in ("passed", "quota"):
+                p["unsoldReason"] = None
+            # excludeReason: quota=名额已满 / unsold=二次流拍 / no_bidder=无人可拍
+            if p.get("excludeReason") not in ("quota", "unsold", "no_bidder"):
+                p["excludeReason"] = None
             if p.get("finalPrice") is None:
                 p["finalPrice"] = None
             if p.get("winner") is None:
@@ -238,6 +246,11 @@ class AuctionEngine:
             entry["realText"] = real_text
         self.logs.append(entry)
         self.history_logs.append(copy.deepcopy(entry))
+        if len(self.logs) > 200:
+            del self.logs[:-200]
+        # 归档日志也设上限，避免整场状态 JSON 无限增长（状态会整段写进数据库）
+        if len(self.history_logs) > 3000:
+            del self.history_logs[:-3000]
 
     def alias_for(self, captain_name: str | None) -> str | None:
         if not captain_name:
@@ -284,18 +297,20 @@ class AuctionEngine:
             return False
         if position in self._captain_positions(cap):
             return False
-        # 已有 MIN_TEAM_SIZE_FOR_RESERVE 名队员时，剩余资金必须 >= MIN_RESERVE_FUNDS
-        if len(cap.get("team", [])) >= MIN_TEAM_SIZE_FOR_RESERVE:
-            if cap["funds"] <= MIN_RESERVE_FUNDS:
-                return False
+        # 余额必须够下一次最低出价，否则本场根本无法真正出价
+        if self.phase == "open_bid" and cap["funds"] < self._min_next_bid():
+            return False
         return True
 
     def captain_skip_reason(self, cap: dict, position: str) -> str | None:
         if cap["name"] in self.passed_captains:
             return "本轮已放弃"
-        return self._position_skip_reason(cap, position)
+        price = self._min_next_bid() if self.phase == "open_bid" else None
+        return self._position_skip_reason(cap, position, price)
 
-    def _position_skip_reason(self, cap: dict, position: str) -> str | None:
+    def _position_skip_reason(
+        self, cap: dict, position: str, price: int | None
+    ) -> str | None:
         if cap["funds"] <= 0:
             return "资金不足"
         own = self._captain_own_position(cap)
@@ -303,20 +318,26 @@ class AuctionEngine:
             return "位置限制"
         if position in self._captain_positions(cap):
             return "已有同位置选手"
-        # 已有 MIN_TEAM_SIZE_FOR_RESERVE 名队员时，剩余资金必须 >= MIN_RESERVE_FUNDS
-        if len(cap.get("team", [])) >= MIN_TEAM_SIZE_FOR_RESERVE:
-            if cap["funds"] <= MIN_RESERVE_FUNDS:
-                return f"需保留{MIN_RESERVE_FUNDS}w余额"
+        # 是否买得起：price 为 None 时不校验金额（兼容旧调用）
+        if price is not None:
+            floor = max(MIN_BID, int(price))
+            if cap["funds"] < floor:
+                return f"余额不足（{cap['funds']}w < {floor}w）"
         return None
 
-    def _could_bid_captains(self, position: str) -> list[dict]:
-        return [c for c in self.captains if self._position_skip_reason(c, position) is None]
+    def _could_bid_captains(self, position: str, price: int | None) -> list[dict]:
+        return [
+            c
+            for c in self.captains
+            if self._position_skip_reason(c, position, price) is None
+        ]
 
     def _check_all_passed_early(self) -> None:
         if self.phase != "open_bid" or not self.current_player or self._has_active_bids():
             return
         position = self.current_player["position"]
-        could_bid = self._could_bid_captains(position)
+        # 用“下一次最低出价”而不是起拍价：当前价被抬高后，余额不够继续跟价的队长不应再算作可出价
+        could_bid = self._could_bid_captains(position, self._min_next_bid())
         if not could_bid:
             return
         if all(cap["name"] in self.passed_captains for cap in could_bid):
@@ -355,7 +376,11 @@ class AuctionEngine:
             if self.auction_stage == "unsold"
             else self.main_pool_players()
         )
-        return [p for p in pool if self._could_bid_captains(p["position"])]
+        return [
+            p
+            for p in pool
+            if self._could_bid_captains(p["position"], p.get("startPrice"))
+        ]
 
     def available_players(self, position: str) -> list[dict]:
         """兼容旧接口：某位置未成交且未排除的选手。"""
@@ -388,8 +413,8 @@ class AuctionEngine:
         sold = self._sold_count_for_position(position)
         soft = SOFT_CAP_BASE - n
         hard = HARD_CAP_BASE - n
-        moved_unsold = 0
-        excluded = 0
+        moved_names: list[str] = []
+        excluded_names: list[str] = []
         for p in self.players:
             if p["position"] != position:
                 continue
@@ -400,20 +425,29 @@ class AuctionEngine:
             if sold >= hard:
                 p["excluded"] = True
                 p["inUnsoldPool"] = False
-                excluded += 1
+                p["excludeReason"] = "quota"
+                excluded_names.append(p["name"])
             elif sold >= soft:
                 if not p.get("inUnsoldPool"):
                     p["inUnsoldPool"] = True
-                    moved_unsold += 1
+                    p["unsoldReason"] = "quota"
+                    moved_names.append(p["name"])
         pos_name = POSITION_NAMES.get(position, position)
-        if excluded:
+
+        def _preview(names: list[str]) -> str:
+            head = "、".join(names[:8])
+            return head + (f" 等 {len(names)} 人" if len(names) > 8 else "")
+
+        if excluded_names:
             self.add_log(
-                f"【{pos_name}】成交已达 {hard}（8−{n}），{excluded} 名选手不再出现",
+                f"【{pos_name}】成交已达 {hard}（8−{n}），{len(excluded_names)} 名选手不再出现："
+                f"{_preview(excluded_names)}",
                 "warn",
             )
-        elif moved_unsold:
+        elif moved_names:
             self.add_log(
-                f"【{pos_name}】成交已达 {soft}（7−{n}），{moved_unsold} 名选手进入流拍池",
+                f"【{pos_name}】成交已达 {soft}（7−{n}），{len(moved_names)} 名选手进入流拍池："
+                f"{_preview(moved_names)}",
                 "warn",
             )
 
@@ -467,6 +501,9 @@ class AuctionEngine:
         self.captain_bids = {}
         self.passed_captains = set()
         self._bid_seq = 0
+        # 同一选手的竞拍过程中保持队长列表顺序稳定，避免每次轮询都乱跳
+        self._captain_row_order = [c["name"] for c in self.captains]
+        random.shuffle(self._captain_row_order)
         self._start_no_bid_timer()
 
     def _record_bid(self, captain_name: str, amount: int) -> None:
@@ -497,13 +534,13 @@ class AuctionEngine:
         buyout = self._player_buyout_price()
         captain_rows = []
         for cap in self.captains:
-            is_leader = cap["name"] == self.current_leader
-            can_bid = self.captain_can_bid(cap, position) and not is_leader
+            can_bid = self.captain_can_bid(cap, position) and cap["name"] != self.current_leader
             buyout_used = cap["name"] in self.used_buyout
             can_buyout = (
                 bool(buyout)
                 and can_bid
                 and not buyout_used
+                and self.current_price < (buyout or 0)
                 and cap["funds"] >= (buyout or 0)
             )
             captain_rows.append(
@@ -512,19 +549,21 @@ class AuctionEngine:
                     "alias": self.captain_aliases.get(cap["name"]),
                     "funds": cap["funds"],
                     "latestBid": self.captain_bids.get(cap["name"]),
-                    "isLeader": is_leader,
+                    "isLeader": cap["name"] == self.current_leader,
                     "canBid": can_bid,
                     "canBuyout": can_buyout,
                     "buyoutUsed": buyout_used,
-                    "skipReason": (
-                        "当前由你领先，等待其他队长加价"
-                        if is_leader
-                        else self.captain_skip_reason(cap, position)
-                    ),
+                    "skipReason": ("当前由你领先，等待其他队长加价" if cap["name"] == self.current_leader else self.captain_skip_reason(cap, position)),
                     "passed": cap["name"] in self.passed_captains,
                 }
             )
-        random.shuffle(captain_rows)
+        order = getattr(self, "_captain_row_order", None)
+        if not order:
+            order = [c["name"] for c in self.captains]
+            random.shuffle(order)
+            self._captain_row_order = order
+        rank = {name: i for i, name in enumerate(order)}
+        captain_rows.sort(key=lambda r: rank.get(r["name"], 999))
         has_bids = self._has_active_bids()
         timeout_seconds = (
             self.bid_extension_seconds if has_bids else self.no_bid_timeout_seconds
@@ -575,7 +614,7 @@ class AuctionEngine:
         self._show_winner_reveal(player, None, None)
 
     def to_state(self) -> dict[str, Any]:
-        self._maybe_hammer()
+        # 读取接口不再改状态：落槌/流拍统一由后台 tick（0.2s）驱动
         return {
             "phase": self.phase,
             "auctionId": self.auction_id,
@@ -618,6 +657,9 @@ class AuctionEngine:
             p["sold"] = False
             p["finalPrice"] = None
             p["winner"] = None
+            p["viaBuyout"] = False
+            p["unsoldReason"] = None
+            p["excludeReason"] = None
         for c in self.captains:
             c["team"] = []
         self.auction_id = str(uuid.uuid4())
@@ -653,8 +695,14 @@ class AuctionEngine:
     def _boost_unsold_prices(self) -> None:
         for p in self.unsold_pool_players():
             original = int(p.get("originalStartPrice") or p.get("startPrice") or MIN_BID)
-            boosted = max(MIN_BID, int(round(original * UNSOLD_PRICE_MULTIPLIER)))
-            p["startPrice"] = boosted
+            if p.get("unsoldReason") == "passed":
+                # 只有真正流拍（上过台没人要）的才按系数涨价
+                p["startPrice"] = max(
+                    MIN_BID, int(round(original * UNSOLD_PRICE_MULTIPLIER))
+                )
+            else:
+                # 因位置名额已满被推进池的选手从未上台，保持原起拍价
+                p["startPrice"] = max(MIN_BID, original)
             p["inUnsoldPool"] = True
         self.auction_stage = "unsold"
         self.add_log(
@@ -688,7 +736,6 @@ class AuctionEngine:
             if not drawable:
                 # 最后一次尝试：逐个排除确实无人能竞拍的流拍选手
                 if self.auction_stage == "unsold":
-                    excluded_count = 0
                     remaining_unsold = [
                         p for p in self.players
                         if p.get("inUnsoldPool") and not p.get("sold") and not p.get("excluded")
@@ -697,12 +744,26 @@ class AuctionEngine:
                         drawable = self.drawable_players()
                         if drawable:
                             break
+                        price = max(MIN_BID, int(p.get("startPrice") or MIN_BID))
+                        best = max((c["funds"] for c in self.captains), default=0)
                         p["excluded"] = True
                         p["inUnsoldPool"] = False
-                        excluded_count += 1
-                        self.add_log(f"流拍排除：{p['name']}（无队长可竞拍）", "warn")
+                        p["unsoldReason"] = None
+                        p["excludeReason"] = "no_bidder"
+                        self.add_log(
+                            f"流拍排除：{p['name']}（起拍{price}w，全场最高余额{best}w，"
+                            f"或该位置各队已满）",
+                            "warn",
+                        )
                     drawable = self.drawable_players()
                 if not drawable:
+                    leftover = [p for p in self.players if self._is_auctionable_player(p)]
+                    if leftover:
+                        names = "、".join(p["name"] for p in leftover[:5])
+                        tail = f" 等 {len(leftover)} 人" if len(leftover) > 5 else ""
+                        self.add_log(
+                            f"剩余未成交：{names}{tail}（无人买得起或位置已满）", "warn"
+                        )
                     self._finish_ceremony()
                     return
 
@@ -748,8 +809,12 @@ class AuctionEngine:
     ) -> str | None:
         if self.phase != "open_bid" or not self.current_player:
             return "当前不在公开叫价阶段"
-        if expected_player_serial and self.current_player.get("serial") != expected_player_serial:
-            return "当前拍卖选手已变化，请刷新后重新操作"
+
+        if expected_player_serial is not None and str(self.current_player.get("serial")) != expected_player_serial:
+            return "选手已切换，本次操作未提交，请刷新后重试"
+
+        if self.current_leader == captain_name:
+            return "当前由你领先，不能给自己抬价"
 
         cap = next((c for c in self.captains if c["name"] == captain_name), None)
         if not cap:
@@ -757,12 +822,10 @@ class AuctionEngine:
 
         position = self.current_player["position"]
         label = self._label(captain_name)
-        if captain_name == self.current_leader:
-            return "当前由你领先，等待其他队长加价"
         if action == "pass":
-            if not self.captain_can_bid(cap, position) and captain_name not in self.passed_captains:
-                reason = self.captain_skip_reason(cap, position)
-                return f"不能参与本场竞拍（{reason}）"
+            # 放弃只表达意图，不校验余额：钱不够继续跟价的队长同样应该能点放弃
+            if captain_name in self.passed_captains:
+                return None
             self.passed_captains.add(captain_name)
             self.captain_bids.setdefault(captain_name, None)
             self.add_log(f"[{label}] 放弃本轮竞拍", "info", real_text=f"[{captain_name}] 放弃本轮竞拍")
@@ -784,6 +847,8 @@ class AuctionEngine:
         if action == "buyout":
             if not buyout:
                 return "该选手无一口价"
+            if self.current_price >= buyout:
+                return f"当前价已达 {self.current_price}w，一口价 {buyout}w 已失效"
             if captain_name in self.used_buyout:
                 return "本场仪式已使用过一口价机会（每位队长仅一次）"
             if amount < buyout:
@@ -794,13 +859,25 @@ class AuctionEngine:
             self._record_bid(captain_name, buyout)
             self.add_log(f"[{label}] 一口价 {buyout}w！", "buyout", real_text=f"[{captain_name}] 一口价 {buyout}w！")
             cap = next(c for c in self.captains if c["name"] == captain_name)
-            self._complete_sale(cap, buyout)
+            self._complete_sale(cap, buyout, via_buyout=True)
             return None
 
         if amount < min_next:
             return f"出价须 ≥ {min_next}w"
         if amount > cap["funds"]:
             return "出价超出剩余资金"
+
+        # 方案A：普通出价触达/超过一口价 → 立即按一口价成交（不消耗该队的一口价机会）
+        if buyout and amount >= buyout:
+            self._record_bid(captain_name, buyout)
+            self.add_log(
+                f"[{label}] 出价 {amount}w 达到一口价 {buyout}w — 直接成交",
+                "buyout",
+                real_text=f"[{captain_name}] 出价 {amount}w 达到一口价 {buyout}w — 直接成交",
+            )
+            cap = next(c for c in self.captains if c["name"] == captain_name)
+            self._complete_sale(cap, buyout, via_buyout=True)
+            return None
 
         self._record_bid(captain_name, amount)
         self.add_log(f"[{label}] 出价 {amount}w", "bid", real_text=f"[{captain_name}] 出价 {amount}w")
@@ -820,13 +897,16 @@ class AuctionEngine:
         self._complete_sale(cap, self.current_price)
         return None
 
-    def _complete_sale(self, cap: dict, price: int) -> None:
+    def _complete_sale(self, cap: dict, price: int, via_buyout: bool = False) -> None:
         player = next(p for p in self.players if p["serial"] == self.current_player["serial"])
         player["sold"] = True
         player["finalPrice"] = price
         player["winner"] = cap["name"]
         player["inUnsoldPool"] = False
         player["excluded"] = False
+        player["unsoldReason"] = None
+        player["excludeReason"] = None
+        player["viaBuyout"] = bool(via_buyout)
         cap["funds"] -= price
         cap["team"].append(player["name"])
         position = player["position"]
@@ -838,6 +918,7 @@ class AuctionEngine:
         if target.get("sold") or target.get("excluded"):
             return
         target["inUnsoldPool"] = True
+        target["unsoldReason"] = "passed"
 
     def _show_winner_reveal(self, player: dict, winner: str | None, price: int | None) -> None:
         if winner is None:
@@ -845,6 +926,8 @@ class AuctionEngine:
                 target = next(p for p in self.players if p["serial"] == player["serial"])
                 target["excluded"] = True
                 target["inUnsoldPool"] = False
+                target["unsoldReason"] = None
+                target["excludeReason"] = "unsold"
                 player = target
             else:
                 self._move_to_unsold_pool(player)
@@ -858,10 +941,12 @@ class AuctionEngine:
         self.current_player = None
         self.phase = "winner_reveal"
         if winner and price is not None:
+            # 保持 "成交：" 前缀不变（main.py 的历史归档按此前缀解析），一口价信息放在末尾
+            suffix = "（一口价成交）" if player.get("viaBuyout") else ""
             self.add_log(
-                f"成交：{self._label(winner)} 以 {price}w 签下 {player['name']}",
+                f"成交：{self._label(winner)} 以 {price}w 签下 {player['name']}{suffix}",
                 "win",
-                real_text=f"成交：{winner} 以 {price}w 签下 {player['name']}",
+                real_text=f"成交：{winner} 以 {price}w 签下 {player['name']}{suffix}",
             )
         elif self.auction_stage == "unsold":
             self.add_log(f"二次拍卖流拍：{player['name']} — 本场不再重拍", "warn")

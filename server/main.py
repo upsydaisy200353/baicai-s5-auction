@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from contextlib import asynccontextmanager
-from functools import wraps
 from threading import RLock
+from functools import wraps
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
@@ -84,6 +85,16 @@ async def lifespan(_app: FastAPI):
             pass
 
 
+_auction_lock = RLock()
+
+def _serialize_auction_mutation(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _auction_lock:
+            return fn(*args, **kwargs)
+    return wrapped
+
+
 app = FastAPI(title="白菜杯拍卖 API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
@@ -94,16 +105,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-auction_lock = RLock()
+# 压缩 JSON / JS / CSS：轮询响应约 47KB -> 6KB
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-def _serialize_auction_mutation(func):
-    @wraps(func)
-    def wrapped(*args, **kwargs):
-        with auction_lock:
-            return func(*args, **kwargs)
-
-    return wrapped
+@app.middleware("http")
+async def _static_cache_headers(request, call_next):
+    """给 /assets 下的带指纹静态资源加长缓存（StaticFiles 挂载不走 serve_spa）。"""
+    response = await call_next(request)
+    if request.url.path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+    return response
 
 
 class LoginPayload(BaseModel):
@@ -156,9 +168,9 @@ class PoolSelectPayload(BaseModel):
 
 class OpenBidPayload(BaseModel):
     action: Literal["bid", "pass", "buyout"]
+    playerSerial: str
     amount: int | None = Field(default=None, ge=1)
     captainName: str | None = None
-    playerSerial: str = Field(min_length=1, max_length=64)
 
 
 class AuctionSettingsPayload(BaseModel):
@@ -364,18 +376,30 @@ def _mask_captain_names_for_viewer(
             if viewer_captain and p["winner"] == viewer_captain:
                 pass
             else:
+                # 只隐藏买家身份，成交价属于公开信息，保留给所有队长查看
                 p.pop("winner", None)
-                p.pop("finalPrice", None)
 
     state.pop("captainAliases", None)
     return state
 
 
 def auction_state_response(user: dict | None = None, *, persist: bool = False) -> dict:
-    with auction_lock:
+    with _auction_lock:
+        before = (
+            auction.phase,
+            auction.current_leader,
+            auction.current_price,
+            auction.last_result is not None,
+        )
         state = enrich_auction_state(auction.to_state())
-        should_persist = persist or auction.is_in_progress()
-        if should_persist:
+        after = (
+            auction.phase,
+            auction.current_leader,
+            auction.current_price,
+            auction.last_result is not None,
+        )
+        # 轮询本身可能触发落锤（_maybe_hammer），状态变了必须落库
+        if persist or after != before:
             persist_auction_state()
     import time as _time
     state["serverTimeMs"] = int(_time.time() * 1000)
@@ -398,7 +422,6 @@ def auction_state_response(user: dict | None = None, *, persist: bool = False) -
                     "lastSeen": u.get("lastSeen"),
                 }
     masked["captainOnline"] = captain_online
-    
     return masked
 
 
@@ -535,7 +558,7 @@ async def _auction_tick_loop() -> None:
     while True:
         await asyncio.sleep(0.2)
         try:
-            with auction_lock:
+            with _auction_lock:
                 if auction.tick():
                     persist_auction_state()
         except Exception as exc:
@@ -842,10 +865,10 @@ def auction_confirm_winner(_user: dict = Depends(require_admin)):
 @app.post("/api/auction/bid")
 @_serialize_auction_mutation
 def auction_bid(payload: OpenBidPayload, user: dict = Depends(require_captain_or_admin)):
-    if auction.phase != "open_bid":
+    if auction.phase != "open_bid" or not auction.current_player:
         raise HTTPException(400, "当前不在公开叫价阶段")
-    if not auction.current_player or payload.playerSerial != auction.current_player.get("serial"):
-        raise HTTPException(409, "当前拍卖选手已变化，请刷新页面后重试")
+    if str(auction.current_player.get("serial")) != payload.playerSerial:
+        raise HTTPException(409, "选手已切换，本次操作未提交，请刷新后重试")
 
     if user["role"] == "admin":
         captain_name = payload.captainName
@@ -891,6 +914,7 @@ def auction_reset(_user: dict = Depends(require_admin)):
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+STATIC_EXT = {".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".svg", ".woff2", ".woff", ".ttf"}
 
 
 def _mount_frontend() -> None:
@@ -902,7 +926,10 @@ def _mount_frontend() -> None:
 
     @app.get("/")
     async def serve_index():
-        return FileResponse(FRONTEND_DIST / "index.html")
+        return FileResponse(
+            FRONTEND_DIST / "index.html",
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -910,6 +937,11 @@ def _mount_frontend() -> None:
             raise HTTPException(404, "Not Found")
         target = FRONTEND_DIST / full_path
         if target.is_file():
+            if target.suffix.lower() in STATIC_EXT:
+                return FileResponse(
+                    target,
+                    headers={"Cache-Control": "public, max-age=2592000, immutable"},
+                )
             return FileResponse(target)
         return FileResponse(FRONTEND_DIST / "index.html")
 

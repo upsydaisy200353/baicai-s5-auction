@@ -154,9 +154,9 @@ def _init_pg_pool() -> None:
     from psycopg2.extras import RealDictCursor
 
     sslmode = "require" if "localhost" not in DATABASE_URL else "prefer"
-    _pg_pool = pool.SimpleConnectionPool(
-        1,
-        5,
+    _pg_pool = pool.ThreadedConnectionPool(
+        2,
+        20,
         DATABASE_URL,
         cursor_factory=RealDictCursor,
         sslmode=sslmode,

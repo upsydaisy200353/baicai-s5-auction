@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { POOL_LETTERS, POSITION_COLORS, POSITION_NAMES, POSITION_SHORT, POSITION_TO_LETTER } from '../constants'
+import { POOL_LETTERS, POSITION_COLORS, POSITION_NAMES, POSITION_SHORT, POSITIONS, POSITION_TO_LETTER } from '../constants'
 import { phaseLabel } from '../auctionEngine'
 import PlayerAvatar from './PlayerAvatar.vue'
 import { buildCaptainRosterSlots } from '../rosterUtils'
@@ -166,8 +166,30 @@ const displayRows = computed((): Array<CaptainBidRow & { avatar?: string | null;
     }
   }
   
+  if (props.isAdmin) {
+    // 管理员端按队伍位置（TOP→SUP）排序，便于一眼看清各位置负责的队长
+    const posIndex = new Map<string, number>()
+    for (const cap of props.captains) {
+      posIndex.set(cap.name, POSITIONS.indexOf(POOL_LETTERS[cap.poolLetter]))
+    }
+    rows.sort((a, b) => (posIndex.get(a.name) ?? 99) - (posIndex.get(b.name) ?? 99))
+  }
+
   return rows
 })
+
+/** 管理员端：每队按 TOP→SUP 五个位置分格展示签约情况 */
+const rosterSlotsByCaptain = computed(() => {
+  const map: Record<string, ReturnType<typeof buildCaptainRosterSlots>> = {}
+  for (const cap of props.captains) {
+    map[cap.name] = buildCaptainRosterSlots(cap, props.players)
+  }
+  return map
+})
+
+function rosterSlots(name: string) {
+  return rosterSlotsByCaptain.value[name] ?? []
+}
 
 const liveBids = computed((): LiveBidEntry[] => props.openBid?.liveBids ?? [])
 
@@ -195,9 +217,24 @@ const finalTeams = computed(() =>
   })),
 )
 const finalSoldCount = computed(() => props.players.filter((player) => player.sold).length)
+const captainNameSet = computed(() => new Set(props.captains.map((c) => c.name)))
+// 未成交 = 所有没卖掉的选手（含从未被抽上台的），但排除队长本人
 const finalUnsoldPlayers = computed(() =>
-  props.players.filter((player) => !player.sold && (player.excluded || player.inUnsoldPool)),
+  props.players.filter(
+    (player) => !player.sold && !captainNameSet.value.has(player.name),
+  ),
 )
+
+function unsoldReasonLabel(player: Player): string {
+  if (player.excluded) {
+    if (player.excludeReason === 'quota') return '名额已满'
+    if (player.excludeReason === 'unsold') return '二次流拍'
+    if (player.excludeReason === 'no_bidder') return '无人可拍'
+    return '未成交'
+  }
+  if (player.inUnsoldPool) return '流拍待重拍'
+  return '未上拍'
+}
 
 const leaderName = computed(() => props.openBid?.currentLeader)
 const leaderPrice = computed(() => props.openBid?.currentPrice ?? 0)
@@ -266,6 +303,7 @@ function posLabel(position: Position | null | undefined) {
               <span class="final-player-name">
                 {{ slot.name || '未签约' }}
                 <small v-if="slot.isCaptain">队长</small>
+                <span v-if="slot.viaBuyout && !slot.isCaptain" class="buyout-badge">一口</span>
               </span>
               <span class="final-price">{{ slot.isCaptain ? '队长位' : slot.price != null ? `${slot.price}w` : '—' }}</span>
             </div>
@@ -283,6 +321,7 @@ function posLabel(position: Position | null | undefined) {
             <span class="unsold-serial">{{ player.serial }}</span>
             <span class="unsold-name">{{ player.name }}</span>
             <span class="unsold-position">{{ POSITION_NAMES[player.position] }}</span>
+            <span class="unsold-reason">{{ unsoldReasonLabel(player) }}</span>
           </div>
         </div>
       </details>
@@ -292,7 +331,7 @@ function posLabel(position: Position | null | undefined) {
       <!-- 左侧：队长实时出价 -->
       <section class="panel captains-panel card">
         <h2 class="panel-title">队长出价板</h2>
-        <div class="captain-grid">
+        <div class="captain-grid" :class="{ 'captain-grid--admin': isAdmin }">
           <div
             v-for="row in displayRows"
             :key="row.name"
@@ -323,7 +362,24 @@ function posLabel(position: Position | null | undefined) {
               <span v-else class="bid-wait">—</span>
             </div>
             <span v-if="row.isLeader" class="leader-crown">领先</span>
-            <div v-if="purchasedPlayers[row.name]?.length" class="purchased-players">
+            <div v-if="isAdmin" class="captain-slots">
+              <div
+                v-for="slot in rosterSlots(row.name)"
+                :key="slot.position"
+                class="captain-slot"
+                :class="{ 'is-empty': !slot.name }"
+              >
+                <span class="slot-pos" :style="{ color: POSITION_COLORS[slot.position] }">
+                  {{ POSITION_SHORT[slot.position] }}
+                </span>
+                <span class="slot-name">{{ slot.isCaptain ? '队长' : slot.name || '未签约' }}</span>
+                <span class="slot-price">
+                  <span v-if="slot.viaBuyout && !slot.isCaptain" class="buyout-badge">一口</span>
+                  {{ slot.isCaptain ? '队长位' : slot.price != null ? `${slot.price}w` : '—' }}
+                </span>
+              </div>
+            </div>
+            <div v-else-if="purchasedPlayers[row.name]?.length" class="purchased-players">
               <span class="purchased-label">已拍:</span>
               <span class="purchased-names">
                 <span v-for="(p, i) in purchasedPlayers[row.name]" :key="p.name">
@@ -599,6 +655,23 @@ function posLabel(position: Position | null | undefined) {
 .final-player-name small { margin-left: .25rem; color: var(--text-muted); font-size: .6rem; }
 .final-price { color: var(--text-muted); font-size: .68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* 一口价成交徽章 */
+.buyout-badge {
+  display: inline-block;
+  margin-right: .25rem;
+  padding: 0 .28rem;
+  border-radius: 4px;
+  font-size: .58rem;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  color: var(--gold);
+  background: rgba(166, 106, 44, .12);
+  border: 1px solid rgba(166, 106, 44, .32);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .final-unsold { padding: .85rem 1rem; }
 .final-unsold summary { display: flex; justify-content: space-between; align-items: center; gap: .75rem; color: var(--text); font-weight: 750; cursor: pointer; list-style: none; }
 .final-unsold summary::-webkit-details-marker { display: none; }
@@ -606,9 +679,10 @@ function posLabel(position: Position | null | undefined) {
 .final-unsold[open] summary::after { content: '−'; }
 .unsold-count { margin-left: auto; color: var(--text-muted); font-size: .75rem; font-weight: 500; }
 .final-unsold-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem .6rem; padding-top: .75rem; }
-.unsold-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .4rem; align-items: baseline; padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 7px; background: rgba(255, 255, 255, .02); }
+.unsold-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: .4rem; align-items: baseline; padding: .45rem .55rem; border: 1px solid var(--border); border-radius: 7px; background: rgba(255, 255, 255, .02); }
 .unsold-serial, .unsold-position { color: var(--text-muted); font-size: .64rem; white-space: nowrap; }
 .unsold-name { min-width: 0; color: var(--text); font-size: .72rem; overflow-wrap: anywhere; }
+.unsold-reason { font-size: .62rem; line-height: 1.5; padding: 0 .28rem; border-radius: 4px; color: var(--text-muted); border: 1px solid var(--border); white-space: nowrap; }
 
 @media (max-width: 1200px) {
   .final-team-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -678,6 +752,86 @@ function posLabel(position: Position | null | undefined) {
 .captain-card.passed,
 .captain-card.disabled {
   opacity: 0.5;
+}
+
+/* ===== 管理员端：两列 × 四队，队内按五个位置分格 ===== */
+.captain-grid--admin {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.captain-grid--admin .captain-card {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  row-gap: 0.4rem;
+}
+
+.captain-grid--admin .captain-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.captain-grid--admin .bid-skip {
+  max-width: none;
+  white-space: nowrap;
+  font-size: 0.66rem;
+}
+
+.captain-slots {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.1rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--border);
+}
+
+.captain-slot {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.3rem;
+}
+
+.captain-slot .slot-pos {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.5;
+  text-align: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.captain-slot .slot-name {
+  min-width: 0;
+  font-size: 0.72rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.captain-slot.is-empty .slot-name,
+.captain-slot.is-empty .slot-price {
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+
+.captain-slot .slot-price {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .captain-grid--admin {
+    grid-template-columns: 1fr;
+  }
 }
 
 .captain-info {

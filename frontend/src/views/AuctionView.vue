@@ -51,13 +51,8 @@ const myCaptainRow = computed(() => {
   return state.value.openBid.captainRows.find((r) => r.name === captainName.value) ?? null
 })
 
-const selectedCaptainIsLeading = computed(() => {
-  const selected = isAdmin.value ? proxyCaptain.value : captainName.value
-  return !!selected && state.value?.openBid?.currentLeader === selected
-})
-
 const canSubmitBid = computed(() => {
-  if (!state.value?.openBid || state.value.phase !== 'open_bid' || selectedCaptainIsLeading.value) return false
+  if (!state.value?.openBid || state.value.phase !== 'open_bid') return false
   if (isAdmin.value) {
     const name = proxyCaptain.value
     if (!name) return false
@@ -124,15 +119,13 @@ async function refresh() {
 }
 
 async function runAction(fn: () => Promise<ServerAuctionState>, label?: string) {
-  if (actionInFlight.value) {
-    actionMsg.value = '操作正在提交，请稍候'
-    return
-  }
+  if (actionInFlight.value) return
   actionInFlight.value = true
   const requestId = ++stateRequestId
-  actionMsg.value = '正在提交，请稍候…'
+  actionMsg.value = label ? `${label}…` : '操作提交中…'
   try {
     applyState(await fn(), requestId)
+    // 没有 label 的成功操作也要清空提示，否则会一直挂着“操作提交中…”
     actionMsg.value = label ?? ''
   } catch (e) {
     actionMsg.value = e instanceof Error ? e.message : '操作失败'
@@ -187,32 +180,32 @@ async function onUpdateSettings(settings: { bidExtensionSeconds: number; noBidTi
   await runAction(() => updateAuctionSettings(settings), '计时已更新')
 }
 
-async function onBid(amount: number, playerSerial: string) {
+async function onBid(amount: number) {
   await runAction(() =>
     submitOpenBid('bid', {
+      playerSerial: String(state.value?.currentPlayer?.serial ?? ''),
       amount,
-      playerSerial,
       captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
     }),
   )
 }
 
-async function onPass(playerSerial: string) {
+async function onPass() {
   await runAction(() =>
     submitOpenBid('pass', {
-      playerSerial,
+      playerSerial: String(state.value?.currentPlayer?.serial ?? ''),
       captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
     }),
   )
 }
 
-async function onBuyout(playerSerial: string) {
+async function onBuyout() {
   const buyout = state.value?.openBid?.buyoutPrice
   if (!buyout) return
   await runAction(() =>
     submitOpenBid('buyout', {
+      playerSerial: String(state.value?.currentPlayer?.serial ?? ''),
       amount: buyout,
-      playerSerial,
       captainName: isAdmin.value ? proxyCaptain.value ?? undefined : undefined,
     }),
   )
@@ -223,12 +216,11 @@ async function onBuyout(playerSerial: string) {
   <div class="auction-view">
     <div v-if="loading && !state" class="banner info">同步拍卖状态…</div>
     <div v-if="error" class="banner error">{{ error }}</div>
-    <div v-if="actionMsg" :class="['banner', actionInFlight ? 'info' : 'warn']">{{ actionMsg }}</div>
+    <div v-if="actionMsg" class="banner warn">{{ actionMsg }}</div>
 
     <template v-if="state">
       <CeremonyOverlay
         v-if="overlayPhases.includes(state.phase)"
-        :busy="actionInFlight"
         :phase="state.phase"
         :captains="state.captains"
         :players="state.players"
@@ -262,7 +254,7 @@ async function onBuyout(playerSerial: string) {
           </div>
           <div class="idle-actions">
             <template v-if="isAdmin">
-              <button class="btn-primary btn-start" :disabled="actionInFlight" @click="onStart">开始仪式</button>
+              <button class="btn-primary btn-start" @click="onStart">开始仪式</button>
               <router-link to="/admin" class="btn-ghost">名单管理</router-link>
             </template>
             <router-link to="/spectator" class="btn-ghost">观战大屏 ↗</router-link>
@@ -319,7 +311,6 @@ async function onBuyout(playerSerial: string) {
 
         <AdminCeremonyBar
           v-if="isAdmin && !overlayPhases.includes(state.phase)"
-          :busy="actionInFlight"
           :phase="state.phase"
           :can-hammer="canHammer"
           :auction-settings="state.auctionSettings"
@@ -365,11 +356,10 @@ async function onBuyout(playerSerial: string) {
             </div>
 
             <OpenBidPanel
-              v-if="state.openBid && (canSubmitBid || hasPassed || selectedCaptainIsLeading)"
+              v-if="state.openBid && (canSubmitBid || hasPassed)"
               :open-bid="state.openBid"
               :can-submit="canSubmitBid"
               :has-passed="hasPassed"
-              :is-leading="selectedCaptainIsLeading"
               :busy="actionInFlight"
               :proxy-mode="isAdmin"
               :proxy-captain-name="proxyCaptain"

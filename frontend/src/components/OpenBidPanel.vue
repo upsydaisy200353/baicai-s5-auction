@@ -9,18 +9,17 @@ const props = defineProps<{
   openBid: OpenBidContext
   canSubmit: boolean
   hasPassed: boolean
+  busy?: boolean
   proxyMode?: boolean
   proxyCaptainName?: string | null
   selfCaptainName?: string | null
   isAdmin?: boolean
-  busy?: boolean
-  isLeading?: boolean
 }>()
 
 const emit = defineEmits<{
-  bid: [amount: number, playerSerial: string]
-  pass: [playerSerial: string]
-  buyout: [playerSerial: string]
+  bid: [amount: number]
+  pass: []
+  buyout: []
 }>()
 
 const bidInput = ref('')
@@ -55,6 +54,13 @@ const maxFunds = computed(() => {
 const canBuyout = computed(() => activeRow.value?.canBuyout ?? false)
 const buyoutUsed = computed(() => activeRow.value?.buyoutUsed ?? false)
 
+/** 当前价已达到或超过一口价时，一口价失效 */
+const buyoutExpired = computed(() => {
+  const buyout = props.openBid.buyoutPrice
+  if (!buyout) return false
+  return (props.openBid.currentPrice || 0) >= buyout
+})
+
 const quickBtns = computed(() =>
   quickIncrements(props.openBid.currentPrice, props.openBid.minNextBid),
 )
@@ -84,7 +90,6 @@ function validate(amount: number): string | null {
 }
 
 function submit(amount: number) {
-  if (props.busy) return
   localError.value = ''
   const err = validate(amount)
   if (err) {
@@ -94,11 +99,10 @@ function submit(amount: number) {
   }
   void unlockAudio()
   playSound('uiClick')
-  emit('bid', amount, props.openBid.player.serial)
+  emit('bid', amount)
 }
 
 function onSubmit() {
-  if (props.busy) return
   const rawValue = String(bidInput.value).trim()
   const amount = parseAmount()
   console.log('onSubmit called:', { rawValue, amount, minNextBid: props.openBid.minNextBid, maxFunds: maxFunds.value })
@@ -118,37 +122,35 @@ function onSubmit() {
 }
 
 function onQuickBid(amount: number) {
-  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
-  submit(amount)
+  bidInput.value = String(amount)
+  isEditing.value = true
+  localError.value = ''
 }
 
 function onBuyout() {
-  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
-  emit('buyout', props.openBid.player.serial)
+  emit('buyout')
 }
 
 function onPass() {
-  if (props.busy) return
   void unlockAudio()
   playSound('uiClick')
-  emit('pass', props.openBid.player.serial)
+  emit('pass')
 }
 </script>
 
 <template>
-  <div class="open-bid-panel card">
+  <div class="open-bid-panel card" :aria-busy="busy">
+    <div v-if="busy" class="panel-hint">正在提交，请稍候…</div>
     <div class="panel-header">
       <h3 class="panel-title">
         <template v-if="proxyMode">代 {{ proxyCaptainName }} 出价</template>
         <template v-else>公开叫价</template>
       </h3>
       <span v-if="hasPassed" class="passed-tag">已放弃本轮</span>
-      <span v-else-if="busy" class="wait-tag">提交中…</span>
-      <span v-else-if="isLeading" class="wait-tag">当前领先，等待其他队长加价</span>
       <span v-else-if="!canSubmit" class="wait-tag">暂不可出价</span>
     </div>
 
@@ -156,7 +158,9 @@ function onPass() {
       {{ POSITION_NAMES[player.position] }} · 当前价
       <strong>{{ openBid.currentPrice || openBid.startPrice }}w</strong>
       · 最低加价 {{ openBid.minIncrement }}w
-      <template v-if="openBid.buyoutPrice"> · 一口价 {{ openBid.buyoutPrice }}w</template>
+      <template v-if="openBid.buyoutPrice">
+        · 一口价 {{ openBid.buyoutPrice }}w<span v-if="buyoutExpired" class="buyout-used">（已失效）</span>
+      </template>
       <template v-if="buyoutUsed"> · <span class="buyout-used">已使用一口价机会</span></template>
     </p>
 
@@ -171,14 +175,6 @@ function onPass() {
         >
           {{ amt }}w
         </button>
-        <button
-          v-if="openBid.buyoutPrice && canBuyout"
-          class="btn-primary btn-buyout"
-          :disabled="busy"
-          @click="onBuyout"
-        >
-          一口价 {{ openBid.buyoutPrice }}w
-        </button>
       </div>
       <div class="input-row">
         <input
@@ -186,14 +182,23 @@ function onPass() {
           type="number"
           class="bid-input"
           :min="openBid.minNextBid"
-          :disabled="busy"
           @focus="isEditing = true"
           @blur="isEditing = false"
+          :disabled="busy"
           @keyup.enter="onSubmit"
         />
         <span class="unit">w</span>
-        <button class="btn-primary" :disabled="busy" @click="onSubmit">出价</button>
+        <button class="btn-primary" :disabled="busy" @click="onSubmit">{{ busy ? '提交中…' : '出价' }}</button>
         <button class="btn-ghost" :disabled="busy" @click="onPass">放弃</button>
+      </div>
+      <div v-if="openBid.buyoutPrice && (canBuyout || buyoutExpired)" class="buyout-row">
+        <button
+          class="btn-primary btn-buyout"
+          :disabled="busy || buyoutExpired"
+          @click="onBuyout"
+        >
+          {{ buyoutExpired ? `一口价 ${openBid.buyoutPrice}w 已失效` : `一口价 ${openBid.buyoutPrice}w` }}
+        </button>
       </div>
       <p v-if="localError" class="local-error">{{ localError }}</p>
     </div>
@@ -257,8 +262,19 @@ function onPass() {
   min-width: 72px;
 }
 
+.buyout-row {
+  margin-top: 0.55rem;
+}
+
 .btn-buyout {
+  width: 100%;
   background: linear-gradient(135deg, #d97706, #b45309);
+}
+
+.btn-buyout:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
 }
 
 .input-row {
@@ -297,7 +313,7 @@ function onPass() {
 .btn-quick,
 .btn-buyout,
 .bid-input {
-  font-family: 'Segoe UI', 'Arial', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-display);
   font-variant-numeric: lining-nums tabular-nums;
   font-feature-settings: 'lnum' 1, 'tnum' 1;
 }
